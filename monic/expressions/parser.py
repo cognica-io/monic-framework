@@ -8,7 +8,7 @@ import ast
 
 
 class ExpressionParser:
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     def parse(self, expression: str) -> ast.Module:
