@@ -37,6 +37,7 @@ class ContinueLoop(Exception):
 class ExpressionInterpreter(ast.NodeVisitor):
     def __init__(self, context: t.Optional[ExpressionContext] = None) -> None:
         self.context = context or ExpressionContext()
+        self.started_at = time.monotonic()
         self.global_env: t.Dict[str, t.Any] = {
             # Built-in functions
             "print": print,
@@ -106,6 +107,9 @@ class ExpressionInterpreter(ast.NodeVisitor):
         # Perform security check
         self._check_security(tree)
 
+        # Start the timer
+        self.started_at = time.monotonic()
+
         try:
             # Handle expression statements specially to capture their value
             if isinstance(tree, ast.Expression):
@@ -129,6 +133,29 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 return result
         except Exception as e:
             raise type(e)(f"Runtime error: {str(e)}") from e
+
+    def visit(self, node: ast.AST) -> t.Any:
+        """Visit a node."""
+        # Check for timeout
+        elapsed = time.monotonic() - self.started_at
+        if self.context.timeout is not None and elapsed > self.context.timeout:
+            raise TimeoutError(
+                f"Execution timed out after {elapsed:.2f} seconds"
+            )
+
+        method = "visit_" + node.__class__.__name__
+        visitor = getattr(self, method, self.generic_visit)
+        return visitor(node)
+
+    def generic_visit(self, node: ast.AST) -> None:
+        """Called if no explicit visitor function exists for a node."""
+        for _, value in ast.iter_fields(node):
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, ast.AST):
+                        self.visit(item)
+            elif isinstance(value, ast.AST):
+                self.visit(value)
 
     def _check_security(self, node: ast.AST) -> None:
         """Check for potentially dangerous operations in the AST.
