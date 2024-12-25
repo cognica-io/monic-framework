@@ -6,18 +6,17 @@
 
 # pylint: disable=no-else-return,no-else-raise,broad-except
 # pylint: disable=too-many-branches,too-many-return-statements,too-many-locals
+# pylint: disable=too-many-public-methods
 
 import ast
 import operator
 import typing as t
 
-
-class SecurityError(Exception):
-    """Raised when dangerous operations are detected."""
-
-
-class UnsupportedUnpackingError(Exception):
-    """Raised when an unsupported unpacking pattern is encountered."""
+from monic.expressions.context import ExpressionContext
+from monic.expressions.exceptions import (
+    SecurityError,
+    UnsupportedUnpackingError,
+)
 
 
 class ReturnValue(Exception):
@@ -26,7 +25,8 @@ class ReturnValue(Exception):
 
 
 class ExpressionInterpreter(ast.NodeVisitor):
-    def __init__(self) -> None:
+    def __init__(self, context: t.Optional[ExpressionContext] = None) -> None:
+        self.context = context or ExpressionContext()
         self.global_env: t.Dict[str, t.Any] = {
             # Built-in functions
             "print": print,
@@ -99,16 +99,16 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 self.global_env["_"] = result
                 return result
             elif isinstance(tree, ast.Module):
-                last_expr = None
+                result = None
                 for stmt in tree.body:
                     if isinstance(stmt, ast.Expr):
                         # For expression statements, capture the value
-                        last_expr = self.visit(stmt.value)
-                        self.global_env["_"] = last_expr
+                        result = self.visit(stmt.value)
+                        self.global_env["_"] = result
                     else:
                         # For other statements, just execute them
                         self.visit(stmt)
-                return last_expr
+                return result
             else:
                 result = self.visit(tree)
                 self.global_env["_"] = result
@@ -135,11 +135,15 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 isinstance(node, ast.Attribute)
                 and node.attr in self.FORBIDDEN_ATTRS
             ):
-                raise SecurityError(f"Access to '{node.attr}' is not allowed")
+                raise SecurityError(
+                    f"Access to '{node.attr}' attribute is not allowed"
+                )
 
             # Check for __builtins__ access
             if isinstance(node, ast.Name) and node.id == "__builtins__":
-                raise SecurityError("Access to '__builtins__' is not allowed")
+                raise SecurityError(
+                    "Access to '__builtins__' attribute is not allowed"
+                )
 
             # Check for import statements
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -289,7 +293,9 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 if starred_indices:
                     # Handle starred unpacking
                     star_index = starred_indices[0]
-                    starred_target = target.elts[star_index]
+                    starred_target = t.cast(
+                        ast.Starred, target.elts[star_index]
+                    )
 
                     # Handle elements before the starred expression
                     before_elements = target.elts[:star_index]
@@ -319,8 +325,10 @@ class ExpressionInterpreter(ast.NodeVisitor):
                         after_star_values = star_values[-after_star_count:]
 
                         # Assign starred target
-                        if isinstance(starred_target, ast.Name):
-                            self.local_env[starred_target.id] = starred_list
+                        if isinstance(starred_target.value, ast.Name):
+                            self.local_env[starred_target.value.id] = (
+                                starred_list
+                            )
 
                         # Assign elements after starred
                         after_elements = target.elts[star_index + 1 :]
@@ -329,8 +337,10 @@ class ExpressionInterpreter(ast.NodeVisitor):
                     else:
                         # If no elements after starred, just assign the rest
                         # to the starred target
-                        if isinstance(starred_target, ast.Name):
-                            self.local_env[starred_target.id] = star_values
+                        if isinstance(starred_target.value, ast.Name):
+                            self.local_env[starred_target.value.id] = (
+                                star_values
+                            )
                 else:
                     # Standard unpacking without starred expression
                     if len(list(value)) != len(target.elts):
@@ -464,8 +474,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
     def _get_exception_class(self, node: ast.expr) -> t.Type[Exception]:
         if isinstance(node, ast.Name):
             class_name = node.id
-            if class_name in globals():
-                exc_class = globals()[class_name]
+            if class_name in globals()["__builtins__"]:
+                exc_class = globals()["__builtins__"][class_name]
                 if isinstance(exc_class, type) and issubclass(
                     exc_class, Exception
                 ):
