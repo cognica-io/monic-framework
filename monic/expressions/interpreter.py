@@ -9,7 +9,9 @@
 # pylint: disable=too-many-public-methods
 
 import ast
+import datetime
 import operator
+import time
 import typing as t
 
 from monic.expressions.context import ExpressionContext
@@ -63,9 +65,13 @@ class ExpressionInterpreter(ast.NodeVisitor):
             "tuple": tuple,
             "set": set,
             "dict": dict,
+            # Constants
             "None": None,
             "True": True,
             "False": False,
+            # Modules
+            "datetime": datetime,
+            "time": time,
         }
         self.local_env: t.Dict[str, t.Any] = {}
 
