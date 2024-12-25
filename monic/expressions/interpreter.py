@@ -779,16 +779,22 @@ class ExpressionInterpreter(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Handle function definition with proper scope creation."""
+        # Capture the current environment for closure
+        closure_env = self.local_env.copy()
 
         def func(*args):
             # Create new scope for function
-            self.scope_stack.append(Scope())
+            func_scope = Scope()
+            self.scope_stack.append(func_scope)
 
-            # Save previous environment
-            previous_env = self.local_env.copy()
-            self.local_env = {}
+            # Set up function's environment with closure variables
+            previous_env = self.local_env
+            self.local_env = closure_env.copy()
 
             try:
+                # Add function to its own environment for recursion
+                self.local_env[node.name] = func
+
                 # Assign parameters in function's scope
                 for param, arg in zip(node.args.args, args):
                     self._set_name_value(param.arg, arg)
@@ -797,20 +803,20 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 try:
                     for stmt in node.body:
                         self.visit(stmt)
+                    return None
                 except ReturnValue as rv:
                     return rv.value
-
-                return None
             finally:
                 # Restore previous environment and pop scope
                 self.local_env = previous_env
                 self.scope_stack.pop()
 
-        # Store function in global environment
-        self.global_env[node.name] = func
+        # Store function in current scope
+        self._set_name_value(node.name, func)
 
     def visit_Lambda(self, node: ast.Lambda) -> t.Callable:
         """Handle lambda expression with proper scope creation."""
+        # Capture the current environment for closure
         closure_env = self.local_env.copy()
 
         def lambda_func(*args):
