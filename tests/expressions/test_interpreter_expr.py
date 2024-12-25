@@ -243,3 +243,71 @@ x
     tree = parser.parse(code)
     result = interpreter.execute(tree)
     assert result == 42
+
+
+def test_break_statement():
+    """Test break statement in loops"""
+    parser = ExpressionParser()
+    interpreter = ExpressionInterpreter()
+
+    # Break in for loop
+    code = """
+result = []
+for i in range(10):
+    if i == 5:
+        break
+    result.append(i)
+result
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [0, 1, 2, 3, 4]
+
+    # Break in while loop
+    code = """
+result = []
+i = 0
+while True:
+    if i == 5:
+        break
+    result.append(i)
+    i += 1
+result
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [0, 1, 2, 3, 4]
+
+
+def test_continue_statement():
+    """Test continue statement in loops"""
+    parser = ExpressionParser()
+    interpreter = ExpressionInterpreter()
+
+    # Continue in for loop
+    code = """
+result = []
+for i in range(10):
+    if i % 2 == 0:
+        continue
+    result.append(i)
+result
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [1, 3, 5, 7, 9]
+
+    # Continue in while loop
+    code = """
+result = []
+i = 0
+while i < 10:
+    i += 1
+    if i % 2 == 0:
+        continue
+    result.append(i)
+result
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [1, 3, 5, 7, 9]
