@@ -4,12 +4,20 @@
 # Copyright (c) 2024 Cognica, Inc.
 #
 
+# pylint: disable=no-else-return,no-else-raise,broad-except
+# pylint: disable=too-many-branches,too-many-return-statements,too-many-locals
+
 import ast
+import operator
 import typing as t
 
 
 class SecurityError(Exception):
     """Raised when dangerous operations are detected."""
+
+
+class UnsupportedUnpackingError(Exception):
+    """Raised when an unsupported unpacking pattern is encountered."""
 
 
 class ReturnValue(Exception):
@@ -20,6 +28,7 @@ class ReturnValue(Exception):
 class ExpressionInterpreter(ast.NodeVisitor):
     def __init__(self) -> None:
         self.global_env: t.Dict[str, t.Any] = {
+            # Built-in functions
             "print": print,
             "len": len,
             "range": range,
@@ -35,6 +44,9 @@ class ExpressionInterpreter(ast.NodeVisitor):
             "map": map,
             "any": any,
             "all": all,
+            "isinstance": isinstance,
+            "issubclass": issubclass,
+            # Built-in types
             "bool": bool,
             "int": int,
             "float": float,
@@ -148,17 +160,191 @@ class ExpressionInterpreter(ast.NodeVisitor):
         if node.id in self.global_env:
             return self.global_env[node.id]
 
-        raise NameError(f"name '{node.id}' is not defined")
+        raise NameError(f"Name '{node.id}' is not defined")
+
+    def _get_name_value(self, name: str) -> t.Any:
+        if name in self.local_env:
+            return self.local_env[name]
+        if name in self.global_env:
+            return self.global_env[name]
+        raise NameError(f"Name '{name}' is not defined")
+
+    _AUG_OP_MAP: t.Dict[t.Type[ast.operator], t.Callable] = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.FloorDiv: operator.floordiv,
+        ast.Mod: operator.mod,
+        ast.Pow: operator.pow,
+        ast.BitAnd: operator.and_,
+        ast.BitOr: operator.or_,
+        ast.BitXor: operator.xor,
+        ast.LShift: operator.lshift,
+        ast.RShift: operator.rshift,
+    }
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        # Get the operator function
+        op_func = self._AUG_OP_MAP.get(type(node.op))
+        if not op_func:
+            raise NotImplementedError(
+                "Unsupported augmented assignment operator: "
+                f"{type(node.op).__name__}"
+            )
+
+        # Evaluate the right side of the assignment
+        right_value = self.visit(node.value)
+
+        if isinstance(node.target, ast.Name):
+            # Simple name target
+            left_value = self._get_name_value(node.target.id)
+            result = op_func(left_value, right_value)
+
+            # Update in the appropriate environment
+            if node.target.id in self.local_env:
+                self.local_env[node.target.id] = result
+            else:
+                self.global_env[node.target.id] = result
+        elif isinstance(node.target, ast.Attribute):
+            # Attribute target (e.g., obj.attr += 1)
+            obj = self.visit(node.target.value)
+            current_value = getattr(obj, node.target.attr)
+            result = op_func(current_value, right_value)
+
+            # Update the attribute
+            setattr(obj, node.target.attr, result)
+        elif isinstance(node.target, ast.Subscript):
+            # Subscript target (e.g., lst[0] += 1)
+            container = self.visit(node.target.value)
+
+            # For list/dict/etc. indexing
+            if isinstance(node.target.slice, ast.Index):
+                # Python < 3.9 compatibility
+                index = self.visit(node.target.slice)
+            else:
+                # Python 3.9+
+                index = self.visit(node.target.slice)
+
+            # Get current value
+            current_value = container[index]
+            result = op_func(current_value, right_value)
+
+            # Update the container
+            container[index] = result
+        else:
+            raise NotImplementedError(
+                "Unsupported augmented assignment target: "
+                f"{type(node.target).__name__}"
+            )
 
     def visit_Assign(self, node: ast.Assign) -> None:
         value = self.visit(node.value)
-        for target in node.targets:
-            if isinstance(target, ast.Name):
-                self.local_env[target.id] = value
-            else:
-                raise NotImplementedError(
-                    "Only simple assignments are supported"
-                )
+        # Handle multiple targets
+        if len(node.targets) > 1:
+            # Multiple target assignment: a = b = 10
+            for target in node.targets:
+                self._handle_unpacking_target(target, value)
+        else:
+            # Single target assignment
+            target = node.targets[0]
+            self._handle_unpacking_target(target, value)
+
+    def _handle_unpacking_target(self, target: ast.AST, value: t.Any) -> None:
+        """
+        Handle different types of unpacking targets.
+
+        Args:
+            target: AST node representing the unpacking target
+            value: The value being assigned
+
+        Raises:
+            UnsupportedUnpackingError: If an unsupported unpacking pattern is
+            encountered
+        """
+        if isinstance(target, ast.Name):
+            # Simple name assignment
+            self.local_env[target.id] = value
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            # Tuple or list unpacking
+            try:
+                # Unpack the value
+                if not hasattr(value, "__iter__"):
+                    raise ValueError("Cannot unpack non-iterable value")
+
+                iter_value = iter(value)
+
+                # Check for starred expressions (extended unpacking)
+                starred_indices = [
+                    i
+                    for i, elt in enumerate(target.elts)
+                    if isinstance(elt, ast.Starred)
+                ]
+
+                if len(starred_indices) > 1:
+                    raise UnsupportedUnpackingError(
+                        "Cannot use multiple starred expressions in assignment"
+                    )
+
+                if starred_indices:
+                    # Handle starred unpacking
+                    star_index = starred_indices[0]
+                    starred_target = target.elts[star_index]
+
+                    # Handle elements before the starred expression
+                    before_elements = target.elts[:star_index]
+                    for tgt in before_elements:
+                        try:
+                            self._handle_unpacking_target(tgt, next(iter_value))
+                        except StopIteration as e:
+                            raise ValueError(
+                                "Not enough values to unpack"
+                            ) from e
+
+                    # Collect remaining elements for the starred target
+                    star_values = list(iter_value)
+
+                    # Calculate how many elements should be in the starred part
+                    # after the current group
+                    after_star_count = len(target.elts) - star_index - 1
+
+                    # If there are more elements after the starred part
+                    if after_star_count > 0:
+                        # Make sure there are enough elements
+                        if len(star_values) < after_star_count:
+                            raise ValueError("Not enough values to unpack")
+
+                        # Separate starred values
+                        starred_list = star_values[:-after_star_count]
+                        after_star_values = star_values[-after_star_count:]
+
+                        # Assign starred target
+                        if isinstance(starred_target, ast.Name):
+                            self.local_env[starred_target.id] = starred_list
+
+                        # Assign elements after starred
+                        after_elements = target.elts[star_index + 1 :]
+                        for tgt, val in zip(after_elements, after_star_values):
+                            self._handle_unpacking_target(tgt, val)
+                    else:
+                        # If no elements after starred, just assign the rest
+                        # to the starred target
+                        if isinstance(starred_target, ast.Name):
+                            self.local_env[starred_target.id] = star_values
+                else:
+                    # Standard unpacking without starred expression
+                    if len(list(value)) != len(target.elts):
+                        raise ValueError("Not enough values to unpack")
+
+                    # Unpack each element
+                    for tgt, val in zip(target.elts, value):
+                        self._handle_unpacking_target(tgt, val)
+            except (TypeError, ValueError) as e:
+                raise UnsupportedUnpackingError(str(e)) from e
+        else:
+            raise UnsupportedUnpackingError(
+                f"Unsupported unpacking target type: {type(target).__name__}"
+            )
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> t.Any:
         operand = self.visit(node.operand)
@@ -221,6 +407,14 @@ class ExpressionInterpreter(ast.NodeVisitor):
                     result = left > right
                 elif isinstance(op, ast.GtE):
                     result = left >= right
+                elif isinstance(op, ast.In):
+                    result = left in right
+                elif isinstance(op, ast.NotIn):
+                    result = left not in right
+                elif isinstance(op, ast.Is):
+                    result = left is right
+                elif isinstance(op, ast.IsNot):
+                    result = left is not right
                 else:
                     raise NotImplementedError(
                         f"Unsupported comparison operator: {type(op).__name__}"
@@ -238,7 +432,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
         try:
             for stmt in node.body:
                 self.visit(stmt)
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:
             handled = False
             for handler in node.handlers:
                 if handler.type is None:
@@ -277,7 +471,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 ):
                     return exc_class
             raise NameError(
-                f"name '{class_name}' is not defined or is not an exception class"
+                f"Name '{class_name}' is not defined or is not an exception "
+                "class"
             )
         elif isinstance(node, ast.Attribute):
             value = self.visit(node.value)
@@ -335,14 +530,12 @@ class ExpressionInterpreter(ast.NodeVisitor):
 
     def visit_For(self, node: ast.For) -> None:
         iter_value = self.visit(node.iter)
+
         try:
             for item in iter_value:
-                if isinstance(node.target, ast.Name):
-                    self.local_env[node.target.id] = item
-                else:
-                    raise NotImplementedError(
-                        "Only simple for loop targets are supported"
-                    )
+                # Use the unpacking method to handle the target
+                # This supports both simple and complex unpacking
+                self._handle_unpacking_target(node.target, item)
 
                 try:
                     for stmt in node.body:
@@ -462,6 +655,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
         return self._handle_comprehension(node, set)
 
     def visit_DictComp(self, node: ast.DictComp) -> dict:
+        # Preserve the current local environment
         outer_env = self.local_env.copy()
         self.local_env = self.local_env.copy()
 
@@ -471,22 +665,27 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 iter_obj = self.visit(generator.iter)
 
                 for item in iter_obj:
-                    if isinstance(generator.target, ast.Name):
-                        self.local_env[generator.target.id] = item
-                    else:
-                        raise NotImplementedError(
-                            "Only simple targets are supported in comprehensions"
-                        )
+                    try:
+                        self._handle_unpacking_target(generator.target, item)
+                    except UnsupportedUnpackingError:
+                        # If unpacking fails, fallback to simple assignment
+                        if isinstance(generator.target, ast.Name):
+                            self.local_env[generator.target.id] = item
+                        else:
+                            raise
 
+                    # Check if all conditions are met
                     if all(
                         self.visit(if_clause) for if_clause in generator.ifs
                     ):
+                        # Evaluate key and value
                         key = self.visit(node.key)
                         value = self.visit(node.value)
                         result[key] = value
 
             return result
         finally:
+            # Restore the original local environment
             self.local_env = outer_env
 
     T = t.TypeVar("T", list, set)
@@ -494,6 +693,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
     def _handle_comprehension(
         self, node: ast.ListComp | ast.SetComp, result_type: t.Type[T]
     ) -> T:
+        # Preserve the current local environment
         outer_env = self.local_env.copy()
         self.local_env = self.local_env.copy()
 
@@ -503,20 +703,25 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 iter_obj = self.visit(generator.iter)
 
                 for item in iter_obj:
-                    if isinstance(generator.target, ast.Name):
-                        self.local_env[generator.target.id] = item
-                    else:
-                        raise NotImplementedError(
-                            "Only simple targets are supported in comprehensions"
-                        )
+                    try:
+                        self._handle_unpacking_target(generator.target, item)
+                    except UnsupportedUnpackingError:
+                        # If unpacking fails, fallback to simple assignment
+                        if isinstance(generator.target, ast.Name):
+                            self.local_env[generator.target.id] = item
+                        else:
+                            raise
 
+                    # Check if all conditions are met
                     if all(
                         self.visit(if_clause) for if_clause in generator.ifs
                     ):
+                        # Evaluate the element
                         result.append(self.visit(node.elt))
 
             return result_type(result)
         finally:
+            # Restore the original local environment
             self.local_env = outer_env
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> str:
@@ -542,7 +747,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
             Formatted string representation of the value
 
         Raises:
-            NotImplementedError: If unsupported conversion or format_spec is used
+            NotImplementedError: If unsupported conversion or format_spec is
+            used
         """
         # Evaluate the expression
         value = self.visit(node.value)
