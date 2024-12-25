@@ -675,6 +675,132 @@ class ExpressionInterpreter(ast.NodeVisitor):
                     f"Expected an exception instance, got {type(exc).__name__}"
                 )
 
+    def visit_With(self, node: ast.With) -> None:
+        """Execute a with statement, properly handling scopes and context
+        managers.
+
+        Args:
+            node: The With statement AST node
+
+        The with statement creates a new scope for its body and properly manages
+        multiple context managers, handling any exceptions that may occur during
+        execution.
+        """
+        # Push a new scope for the with block
+        new_scope = Scope()
+        self.scope_stack.append(new_scope)
+
+        # Save current environment state
+        saved_env = self.local_env.copy()
+        with_env = {}  # Environment for variables defined in this with block
+
+        # List to track context managers and their values
+        context_managers = []
+
+        try:
+            # Enter all context managers in order
+            for item in node.items:
+                try:
+                    # Evaluate the context manager expression
+                    context_manager = self.visit(item.context_expr)
+
+                    try:
+                        # Enter the context manager
+                        value = (
+                            context_manager.__enter__()  # pylint: disable=unnecessary-dunder-call
+                        )
+                        context_managers.append((context_manager, value))
+
+                        # Handle the optional 'as' variable if present
+                        if item.optional_vars is not None:
+                            # Add the 'as' variable to the with block's
+                            # environment
+                            name = self.visit(item.optional_vars)
+                            with_env[name] = value
+                            self.current_scope.locals.add(name)
+
+                    except Exception as enter_exc:
+                        # If __enter__ fails, properly clean up previous context
+                        # managers
+                        for mgr, _ in reversed(context_managers[:-1]):
+                            try:
+                                mgr.__exit__(None, None, None)
+                            except Exception:
+                                # Ignore any cleanup exceptions
+                                pass
+                        raise enter_exc
+                except Exception as ctx_exc:
+                    # Clean up any successfully entered context managers
+                    self._exit_context_managers(context_managers, ctx_exc)
+                    raise ctx_exc
+
+            # Update local environment with with block's environment
+            self.local_env = {**saved_env, **with_env}
+
+            try:
+                # Execute the body of the with statement
+                for stmt in node.body:
+                    self.visit(stmt)
+            except Exception as body_exc:
+                # Handle any exception from the body
+                if not self._exit_context_managers(context_managers, body_exc):
+                    raise body_exc
+            else:
+                # No exception occurred, exit context managers normally
+                self._exit_context_managers(context_managers, None)
+        finally:
+            # Restore the original environment and pop the scope
+            # Only keep variables that were in the original environment
+            self.local_env = {
+                k: v
+                for k, v in self.local_env.items()
+                if k in saved_env or k not in self.current_scope.locals
+            }
+            self.scope_stack.pop()
+
+    def _exit_context_managers(
+        self,
+        context_managers: list[tuple[t.Any, t.Any]],
+        exc_info: Exception | None,
+    ) -> bool:
+        """Exit a list of context managers, handling any exceptions.
+
+        Args:
+            context_managers: List of (context_manager, value) pairs to exit
+            exc_info: The exception that occurred, if any
+
+        Returns:
+            bool: True if any context manager suppressed the exception
+        """
+        # Track if any context manager suppresses the exception
+        suppressed = False
+
+        if exc_info is not None:
+            exc_type = type(exc_info)
+            exc_value = exc_info
+            exc_tb = exc_info.__traceback__
+        else:
+            exc_type = None
+            exc_value = None
+            exc_tb = None
+
+        # Exit context managers in reverse order
+        for cm, _ in reversed(context_managers):
+            try:
+                if cm.__exit__(exc_type, exc_value, exc_tb):
+                    suppressed = True
+                    exc_type = None
+                    exc_value = None
+                    exc_tb = None
+            except Exception as exit_exc:
+                # If __exit__ raises an exception, update the exception info
+                exc_type = type(exit_exc)
+                exc_value = exit_exc
+                exc_tb = exit_exc.__traceback__
+                suppressed = False
+
+        return suppressed
+
     def visit_If(self, node: ast.If) -> None:
         if self.visit(node.test):
             for stmt in node.body:
