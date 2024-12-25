@@ -539,6 +539,25 @@ class ExpressionInterpreter(ast.NodeVisitor):
             for stmt in node.orelse:
                 self.visit(stmt)
 
+    def visit_Pass(
+        self, node: ast.Pass  # pylint: disable=unused-argument
+    ) -> None:
+        """
+        Handle the Pass statement.
+
+        The Pass statement is a no-operation statement that does nothing.
+        It's used as a placeholder when syntactically a statement is required
+        but no action is desired.
+
+        Args:
+            node (ast.Pass): The Pass statement AST node
+
+        Returns:
+            None
+        """
+        # Do nothing, which is exactly what Pass is supposed to do
+        return None
+
     def visit_Break(self, node: ast.Break) -> None:
         """Handle break statement by raising a BreakLoop exception."""
         raise BreakLoop()
