@@ -24,6 +24,14 @@ class ReturnValue(Exception):
         self.value = value
 
 
+class BreakLoop(Exception):
+    """Raised to break out of a loop."""
+
+
+class ContinueLoop(Exception):
+    """Raised to continue to the next iteration of a loop."""
+
+
 class ExpressionInterpreter(ast.NodeVisitor):
     def __init__(self, context: t.Optional[ExpressionContext] = None) -> None:
         self.context = context or ExpressionContext()
@@ -525,11 +533,27 @@ class ExpressionInterpreter(ast.NodeVisitor):
             for stmt in node.orelse:
                 self.visit(stmt)
 
+    def visit_Break(self, node: ast.Break) -> None:
+        """Handle break statement by raising a BreakLoop exception."""
+        raise BreakLoop()
+
+    def visit_Continue(self, node: ast.Continue) -> None:
+        """Handle continue statement by raising a ContinueLoop exception."""
+        raise ContinueLoop()
+
     def visit_While(self, node: ast.While) -> None:
         while self.visit(node.test):
             try:
                 for stmt in node.body:
-                    self.visit(stmt)
+                    try:
+                        self.visit(stmt)
+                    except ContinueLoop:
+                        break
+                else:
+                    # This else block is executed if no break occurred
+                    continue
+            except BreakLoop:
+                break
             except ReturnValue as rv:
                 raise rv
             except Exception as e:
@@ -544,12 +568,19 @@ class ExpressionInterpreter(ast.NodeVisitor):
         try:
             for item in iter_value:
                 # Use the unpacking method to handle the target
-                # This supports both simple and complex unpacking
                 self._handle_unpacking_target(node.target, item)
 
                 try:
                     for stmt in node.body:
-                        self.visit(stmt)
+                        try:
+                            self.visit(stmt)
+                        except ContinueLoop:
+                            break
+                    else:
+                        # This else block is executed if no break occurred
+                        continue
+                except BreakLoop:
+                    break
                 except ReturnValue as rv:
                     raise rv
         except Exception as e:
