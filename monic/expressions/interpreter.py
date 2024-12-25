@@ -14,6 +14,8 @@ import operator
 import time
 import typing as t
 
+from dataclasses import dataclass, field
+
 from monic.expressions.context import ExpressionContext
 from monic.expressions.exceptions import (
     SecurityError,
@@ -34,10 +36,31 @@ class ContinueLoop(Exception):
     """Raised to continue to the next iteration of a loop."""
 
 
+@dataclass
+class Scope:
+    # Names declared as global
+    globals: t.Set[str] = field(default_factory=set)
+    # Names declared as nonlocal
+    nonlocals: t.Set[str] = field(default_factory=set)
+    # Names assigned in current scope
+    locals: t.Set[str] = field(default_factory=set)
+
+
+@dataclass
+class ControlFlow:
+    """Record for tracking control flow state."""
+
+    in_loop: bool = False
+
+
 class ExpressionInterpreter(ast.NodeVisitor):
     def __init__(self, context: t.Optional[ExpressionContext] = None) -> None:
-        self.context = context or ExpressionContext()
         self.started_at = time.monotonic()
+
+        self.context = context or ExpressionContext()
+        self.scope_stack: t.List[Scope] = [Scope()]  # Track scopes
+        self.control: ControlFlow = ControlFlow()
+
         self.global_env: t.Dict[str, t.Any] = {
             # Built-in functions
             "print": print,
@@ -70,6 +93,19 @@ class ExpressionInterpreter(ast.NodeVisitor):
             "None": None,
             "True": True,
             "False": False,
+            # Exceptions
+            "Exception": Exception,
+            "ValueError": ValueError,
+            "TypeError": TypeError,
+            "NameError": NameError,
+            "IndexError": IndexError,
+            "KeyError": KeyError,
+            "ZeroDivisionError": ZeroDivisionError,
+            "StopIteration": StopIteration,
+            "TimeoutError": TimeoutError,
+            "RuntimeError": RuntimeError,
+            "SecurityError": SecurityError,
+            "UnsupportedUnpackingError": UnsupportedUnpackingError,
             # Modules
             "datetime": datetime,
             "time": time,
@@ -102,6 +138,10 @@ class ExpressionInterpreter(ast.NodeVisitor):
             "__mro__",
             "__qualname__",
         }
+
+    @property
+    def current_scope(self) -> Scope:
+        return self.scope_stack[-1]
 
     def execute(self, tree: ast.AST) -> t.Any:
         # Perform security check
@@ -190,29 +230,123 @@ class ExpressionInterpreter(ast.NodeVisitor):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 raise SecurityError("Import statements are not allowed")
 
+    def visit_Global(self, node: ast.Global) -> None:
+        """Handle global declarations."""
+        for name in node.names:
+            self.current_scope.globals.add(name)
+            # Remove from locals if present
+            self.current_scope.locals.discard(name)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        """Handle nonlocal declarations."""
+        for name in node.names:
+            self.current_scope.nonlocals.add(name)
+            # Remove from locals if present
+            self.current_scope.locals.discard(name)
+
     def visit_Constant(self, node: ast.Constant) -> t.Any:
         return node.value
 
-    def visit_Name(self, node: ast.Name) -> t.Any:
-        if isinstance(node.ctx, ast.Store):
-            return node.id
-
-        if node.id == "_":
-            return self.global_env.get("_")
-
-        if node.id in self.local_env:
-            return self.local_env[node.id]
-        if node.id in self.global_env:
-            return self.global_env[node.id]
-
-        raise NameError(f"Name '{node.id}' is not defined")
-
     def _get_name_value(self, name: str) -> t.Any:
-        if name in self.local_env:
+        """Get value of a name considering scope declarations."""
+        if name in self.current_scope.globals:
+            if name in self.global_env:
+                return self.global_env[name]
+            raise NameError(f"Global name '{name}' is not defined")
+        elif name in self.current_scope.nonlocals:
+            # Search for name in outer scopes
+            for scope in reversed(self.scope_stack[:-1]):
+                if name in scope.locals:
+                    return self.local_env[name]
+            raise NameError(f"Nonlocal name '{name}' is not defined")
+        elif name in self.local_env:
             return self.local_env[name]
-        if name in self.global_env:
+        elif name in self.global_env:
             return self.global_env[name]
         raise NameError(f"Name '{name}' is not defined")
+
+    def _set_name_value(self, name: str, value: t.Any) -> None:
+        """Set value of a name considering scope declarations."""
+        if name in self.current_scope.globals:
+            self.global_env[name] = value
+        elif name in self.current_scope.nonlocals:
+            # Search for name in outer scopes to update
+            for scope in reversed(self.scope_stack[:-1]):
+                if name in scope.locals:
+                    self.local_env[name] = value
+                    return
+            raise NameError(f"Nonlocal name '{name}' is not defined")
+        else:
+            # If not declared global/nonlocal, assign in current scope
+            self.current_scope.locals.add(name)
+            self.local_env[name] = value
+
+    def _del_name_value(self, name: str) -> None:
+        """Delete a name from the appropriate scope."""
+        if name == "_":
+            raise SyntaxError("Cannot delete special variable '_'")
+
+        if name in self.current_scope.globals:
+            if name in self.global_env:
+                del self.global_env[name]
+            else:
+                raise NameError(f"Global name '{name}' is not defined")
+
+        elif name in self.current_scope.nonlocals:
+            # Search for name in outer scopes
+            found = False
+            for scope in reversed(self.scope_stack[:-1]):
+                if name in scope.locals:
+                    found = True
+                    if name in self.local_env:
+                        del self.local_env[name]
+                        scope.locals.remove(name)
+                    break
+            if not found:
+                raise NameError(f"Nonlocal name '{name}' is not defined")
+
+        else:
+            # Try to delete from current scope
+            if name in self.current_scope.locals:
+                del self.local_env[name]
+                self.current_scope.locals.remove(name)
+            elif name in self.global_env:
+                del self.global_env[name]
+            else:
+                raise NameError(f"Name '{name}' is not defined")
+
+    def visit_Name(self, node: ast.Name) -> t.Any:
+        """Visit a Name node, handling variable lookup according to scope rules.
+
+        Args:
+            node: The Name AST node
+
+        Returns:
+            The value of the name in the appropriate scope
+
+        Raises:
+            NameError: If the name cannot be found in any accessible scope
+            SyntaxError: If attempting to modify special variable '_'
+            NotImplementedError: If the context type is not supported
+        """
+        # Handle special underscore variable
+        if node.id == "_":
+            if isinstance(node.ctx, (ast.Store, ast.Del)):
+                op = "delete" if isinstance(node.ctx, ast.Del) else "assign to"
+                raise SyntaxError(f"Cannot {op} special variable '_'")
+            return self.global_env.get("_")
+
+        # Handle different contexts
+        if isinstance(node.ctx, ast.Store):
+            return node.id
+        elif isinstance(node.ctx, ast.Load):
+            return self._get_name_value(node.id)
+        elif isinstance(node.ctx, ast.Del):
+            self._del_name_value(node.id)
+        else:
+            raise NotImplementedError(
+                f"Unsupported context type: {type(node.ctx).__name__}"
+            )
 
     _AUG_OP_MAP: t.Dict[t.Type[ast.operator], t.Callable] = {
         ast.Add: operator.add,
@@ -230,7 +364,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
     }
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        # Get the operator function
+        """Handle augmented assignment with proper scope handling."""
         op_func = self._AUG_OP_MAP.get(type(node.op))
         if not op_func:
             raise NotImplementedError(
@@ -238,50 +372,33 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 f"{type(node.op).__name__}"
             )
 
-        # Evaluate the right side of the assignment
-        right_value = self.visit(node.value)
-
+        # Get the current value
         if isinstance(node.target, ast.Name):
-            # Simple name target
-            left_value = self._get_name_value(node.target.id)
-            result = op_func(left_value, right_value)
-
-            # Update in the appropriate environment
-            if node.target.id in self.local_env:
-                self.local_env[node.target.id] = result
-            else:
-                self.global_env[node.target.id] = result
+            target_value = self._get_name_value(node.target.id)
         elif isinstance(node.target, ast.Attribute):
-            # Attribute target (e.g., obj.attr += 1)
             obj = self.visit(node.target.value)
-            current_value = getattr(obj, node.target.attr)
-            result = op_func(current_value, right_value)
-
-            # Update the attribute
-            setattr(obj, node.target.attr, result)
+            target_value = getattr(obj, node.target.attr)
         elif isinstance(node.target, ast.Subscript):
-            # Subscript target (e.g., lst[0] += 1)
             container = self.visit(node.target.value)
-
-            # For list/dict/etc. indexing
-            if isinstance(node.target.slice, ast.Index):
-                # Python < 3.9 compatibility
-                index = self.visit(node.target.slice)
-            else:
-                # Python 3.9+
-                index = self.visit(node.target.slice)
-
-            # Get current value
-            current_value = container[index]
-            result = op_func(current_value, right_value)
-
-            # Update the container
-            container[index] = result
+            index = self.visit(node.target.slice)
+            target_value = container[index]
         else:
             raise NotImplementedError(
                 "Unsupported augmented assignment target: "
                 f"{type(node.target).__name__}"
             )
+
+        # Compute the new value
+        right_value = self.visit(node.value)
+        result = op_func(target_value, right_value)
+
+        # Store the result
+        if isinstance(node.target, ast.Name):
+            self._set_name_value(node.target.id, result)
+        elif isinstance(node.target, ast.Attribute):
+            setattr(obj, node.target.attr, result)
+        elif isinstance(node.target, ast.Subscript):
+            container[index] = result
 
     def visit_Assign(self, node: ast.Assign) -> None:
         value = self.visit(node.value)
@@ -308,8 +425,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
             encountered
         """
         if isinstance(target, ast.Name):
-            # Simple name assignment
-            self.local_env[target.id] = value
+            # Simple name assignment with scope handling
+            self._set_name_value(target.id, value)
         elif isinstance(target, (ast.Tuple, ast.List)):
             # Tuple or list unpacking
             try:
@@ -349,7 +466,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
                             ) from e
 
                     # Collect remaining elements for the starred target
-                    star_values = list(iter_value)
+                    starred_values = list(iter_value)
 
                     # Calculate how many elements should be in the starred part
                     # after the current group
@@ -358,17 +475,17 @@ class ExpressionInterpreter(ast.NodeVisitor):
                     # If there are more elements after the starred part
                     if after_star_count > 0:
                         # Make sure there are enough elements
-                        if len(star_values) < after_star_count:
+                        if len(starred_values) < after_star_count:
                             raise ValueError("Not enough values to unpack")
 
                         # Separate starred values
-                        starred_list = star_values[:-after_star_count]
-                        after_star_values = star_values[-after_star_count:]
+                        starred_list = starred_values[:-after_star_count]
+                        after_star_values = starred_values[-after_star_count:]
 
                         # Assign starred target
                         if isinstance(starred_target.value, ast.Name):
-                            self.local_env[starred_target.value.id] = (
-                                starred_list
+                            self._set_name_value(
+                                starred_target.value.id, starred_list
                             )
 
                         # Assign elements after starred
@@ -379,8 +496,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
                         # If no elements after starred, just assign the rest
                         # to the starred target
                         if isinstance(starred_target.value, ast.Name):
-                            self.local_env[starred_target.value.id] = (
-                                star_values
+                            self._set_name_value(
+                                starred_target.value.id, starred_values
                             )
                 else:
                     # Standard unpacking without starred expression
@@ -585,36 +702,53 @@ class ExpressionInterpreter(ast.NodeVisitor):
         # Do nothing, which is exactly what Pass is supposed to do
         return None
 
-    def visit_Break(self, node: ast.Break) -> None:
-        """Handle break statement by raising a BreakLoop exception."""
+    def visit_Break(
+        self, node: ast.Break  # pylint: disable=unused-argument
+    ) -> None:
+        """Handle break statement."""
+        if not self.control.in_loop:
+            raise SyntaxError("'break' outside loop")
         raise BreakLoop()
 
-    def visit_Continue(self, node: ast.Continue) -> None:
-        """Handle continue statement by raising a ContinueLoop exception."""
+    def visit_Continue(
+        self, node: ast.Continue  # pylint: disable=unused-argument
+    ) -> None:
+        """Handle continue statement."""
+        if not self.control.in_loop:
+            raise SyntaxError("'continue' outside loop")
         raise ContinueLoop()
 
     def visit_While(self, node: ast.While) -> None:
-        while self.visit(node.test):
-            try:
-                for stmt in node.body:
-                    try:
-                        self.visit(stmt)
-                    except ContinueLoop:
-                        break
-                else:
-                    # This else block is executed if no break occurred
-                    continue
-            except BreakLoop:
-                break
-            except ReturnValue as rv:
-                raise rv
-            except Exception as e:
-                if node.orelse:
-                    for stmt in node.orelse:
-                        self.visit(stmt)
-                raise e
+        prev_in_loop = self.control.in_loop
+        self.control.in_loop = True
+
+        try:
+            while self.visit(node.test):
+                try:
+                    for stmt in node.body:
+                        try:
+                            self.visit(stmt)
+                        except ContinueLoop:
+                            break
+                    else:
+                        # This else block is executed if no break occurred
+                        continue
+                except BreakLoop:
+                    break
+                except ReturnValue as rv:
+                    raise rv
+                except Exception as e:
+                    if node.orelse:
+                        for stmt in node.orelse:
+                            self.visit(stmt)
+                    raise e
+        finally:
+            self.control.in_loop = prev_in_loop
 
     def visit_For(self, node: ast.For) -> None:
+        prev_in_loop = self.control.in_loop
+        self.control.in_loop = True
+
         iter_value = self.visit(node.iter)
 
         try:
@@ -640,44 +774,24 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 for stmt in node.orelse:
                     self.visit(stmt)
             raise e
-
-    def visit_Lambda(self, node: ast.Lambda) -> t.Callable:
-        closure_locals = self.local_env.copy()
-        closure_globals = self.global_env
-
-        def lambda_func(*args):
-            # Save current environments
-            prev_local = self.local_env
-            prev_global = self.global_env
-
-            try:
-                # Create new environments
-                self.local_env = closure_locals.copy()
-                self.global_env = closure_globals
-
-                # Assign arguments to parameters
-                for param, arg in zip(node.args.args, args):
-                    self.local_env[param.arg] = arg
-
-                # Execute function body
-                return self.visit(node.body)
-            finally:
-                # Restore environments
-                self.local_env = prev_local
-                self.global_env = prev_global
-
-        return lambda_func
+        finally:
+            self.control.in_loop = prev_in_loop
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """Handle function definition with proper scope creation."""
+
         def func(*args):
-            # Create new local environment
+            # Create new scope for function
+            self.scope_stack.append(Scope())
+
+            # Save previous environment
             previous_env = self.local_env.copy()
             self.local_env = {}
 
             try:
-                # Assign arguments to parameters
+                # Assign parameters in function's scope
                 for param, arg in zip(node.args.args, args):
-                    self.local_env[param.arg] = arg
+                    self._set_name_value(param.arg, arg)
 
                 # Execute function body
                 try:
@@ -688,11 +802,37 @@ class ExpressionInterpreter(ast.NodeVisitor):
 
                 return None
             finally:
-                # Restore local environment
+                # Restore previous environment and pop scope
                 self.local_env = previous_env
+                self.scope_stack.pop()
 
         # Store function in global environment
         self.global_env[node.name] = func
+
+    def visit_Lambda(self, node: ast.Lambda) -> t.Callable:
+        """Handle lambda expression with proper scope creation."""
+        closure_env = self.local_env.copy()
+
+        def lambda_func(*args):
+            # Create new scope for lambda
+            self.scope_stack.append(Scope())
+
+            # Save previous environment
+            previous_env = self.local_env
+            self.local_env = closure_env.copy()
+
+            try:
+                # Assign parameters in lambda's scope
+                for param, arg in zip(node.args.args, args):
+                    self._set_name_value(param.arg, arg)
+
+                return self.visit(node.body)
+            finally:
+                # Restore previous environment and pop scope
+                self.local_env = previous_env
+                self.scope_stack.pop()
+
+        return lambda_func
 
     def visit_Return(self, node: ast.Return) -> None:
         value = None if node.value is None else self.visit(node.value)
