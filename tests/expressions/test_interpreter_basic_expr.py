@@ -9,7 +9,6 @@ import pytest
 from monic.expressions import (
     ExpressionsParser,
     ExpressionsInterpreter,
-    SecurityError,
 )
 
 

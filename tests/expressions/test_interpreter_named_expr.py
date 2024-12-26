@@ -99,4 +99,4 @@ def test_named_expr_error():
     parser = ExpressionsParser()
 
     with pytest.raises(SyntaxError):
-        tree = parser.parse(code)
+        parser.parse(code)
