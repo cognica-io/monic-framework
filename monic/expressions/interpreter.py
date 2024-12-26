@@ -858,7 +858,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
     def _exit_context_managers(
         self,
         context_managers: list[tuple[t.Any, t.Any]],
-        exc_info: Exception | None,
+        exc_info: t.Optional[Exception],
     ) -> bool:
         """Exit a list of context managers, handling any exceptions.
 
@@ -907,7 +907,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 self.visit(stmt)
 
     def visit_IfExp(self, node: ast.IfExp) -> t.Any:
-        # Ternary expression:  <body> if <test> else <orelse>
+        # Ternary expression: <body> if <test> else <orelse>
         condition = self.visit(node.test)
         if condition:
             return self.visit(node.body)
@@ -1372,7 +1372,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
     T = t.TypeVar("T", list, set)
 
     def _handle_comprehension(
-        self, node: ast.ListComp | ast.SetComp, result_type: t.Type[T]
+        self, node: t.Union[ast.ListComp, ast.SetComp], result_type: t.Type[T]
     ) -> T:
         # Create new scope for the comprehension
         comp_scope = Scope()
