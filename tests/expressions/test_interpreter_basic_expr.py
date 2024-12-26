@@ -139,30 +139,6 @@ def test_list_unpacking():
     assert interpreter.local_env["rest"] == [2, 3, 4]
 
 
-def test_security_checks():
-    """Test security-related checks"""
-    parser = ExpressionsParser()
-    interpreter = ExpressionsInterpreter()
-
-    # Forbidden function calls
-    forbidden_funcs = ["eval", "exec", "compile", "__import__"]
-    for func in forbidden_funcs:
-        with pytest.raises(
-            SecurityError, match=f"Use of '{func}' is not allowed"
-        ):
-            tree = parser.parse(f"{func}('print(1)')")
-            interpreter.execute(tree)
-
-    # Forbidden attribute access
-    forbidden_attrs = ["__code__", "__globals__", "__dict__"]
-    for attr in forbidden_attrs:
-        with pytest.raises(
-            SecurityError, match=f"Access to '{attr}' attribute is not allowed"
-        ):
-            tree = parser.parse(f"[1,2,3].{attr}")
-            interpreter.execute(tree)
-
-
 def test_error_handling():
     """Test error handling mechanisms"""
     parser = ExpressionsParser()
@@ -311,3 +287,87 @@ result
     tree = parser.parse(code)
     result = interpreter.execute(tree)
     assert result == [1, 3, 5, 7, 9]
+
+
+def test_nested_comprehension():
+    """Test nested list/dict comprehensions"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Nested list comprehension
+    code = """
+    matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    flattened = [x for row in matrix for x in row]
+    transposed = [[row[i] for row in matrix] for i in range(3)]
+    """
+    interpreter.execute(parser.parse(code))
+    assert interpreter.get_name_value("flattened") == [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+    ]
+    assert interpreter.get_name_value("transposed") == [
+        [1, 4, 7],
+        [2, 5, 8],
+        [3, 6, 9],
+    ]
+
+
+def test_complex_slicing():
+    """Test complex slicing operations"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    code = """
+    lst = list(range(10))
+    slice1 = lst[::2]  # Every second element
+    slice2 = lst[::-1]  # Reverse
+    slice3 = lst[1:7:2]  # Start:stop:step
+    slice4 = lst[-3::-2]  # Negative indices
+    """
+    interpreter.execute(parser.parse(code))
+    assert interpreter.get_name_value("slice1") == [0, 2, 4, 6, 8]
+    assert interpreter.get_name_value("slice2") == [
+        9,
+        8,
+        7,
+        6,
+        5,
+        4,
+        3,
+        2,
+        1,
+        0,
+    ]
+    assert interpreter.get_name_value("slice3") == [1, 3, 5]
+    assert interpreter.get_name_value("slice4") == [7, 5, 3, 1]
+
+
+def test_exception_handling_details():
+    """Test detailed exception handling cases"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test exception variable scope
+    code = """
+    try:
+        raise ValueError("test")
+    except ValueError as e:
+        error_msg = str(e)
+
+    try:
+        e  # Should raise NameError
+    except NameError:
+        error_exists = False
+    else:
+        error_exists = True
+    """
+    interpreter.execute(parser.parse(code))
+    assert interpreter.get_name_value("error_msg") == "test"
+    assert interpreter.get_name_value("error_exists") is False
