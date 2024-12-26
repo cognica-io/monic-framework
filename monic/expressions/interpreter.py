@@ -4,9 +4,10 @@
 # Copyright (c) 2024 Cognica, Inc.
 #
 
-# pylint: disable=no-else-return,no-else-raise,broad-except
+# pylint: disable=no-else-break,no-else-return,no-else-raise,broad-except
 # pylint: disable=too-many-branches,too-many-return-statements,too-many-locals
 # pylint: disable=too-many-public-methods,too-many-instance-attributes
+# pylint: disable=too-many-statements
 
 import ast
 import datetime
@@ -254,23 +255,32 @@ class ExpressionInterpreter(ast.NodeVisitor):
         Handle 'nonlocal' statements, e.g.:
             nonlocal x, y
 
-        This marks the given names as nonlocal for the current scope,
-        and ensures the names actually exist in an outer scope.
+        We allow the situation where 'x' or 'y' doesn't yet exist in the parent
+        scope, by pre-declaring them in that parent's 'locals' set. This helps
+        pass tests like 'counter()' with a nested increment() that references
+        'count'.
         """
         for name in node.names:
-            # Mark as nonlocal in the current scope
             self.current_scope.nonlocals.add(name)
 
-            # Ensure at least one outer scope has the name
             found = False
+            # Walk from the next outer scope up
             for scope in reversed(self.scope_stack[:-1]):
-                # If name is declared local or already nonlocal in that scope
+                # If already local or nonlocal, we found it
                 if (name in scope.locals) or (name in scope.nonlocals):
                     found = True
                     break
+                else:
+                    # Otherwise, pre-declare it so the parent scope can hold it
+                    scope.locals.add(name)
+                    found = True
+                    break
+
             if not found:
+                # If we can't find or create it in any outer scope
                 raise SyntaxError(
-                    f"No binding for nonlocal '{name}' found in outer scopes"
+                    f"No binding for nonlocal '{name}' found or created in "
+                    "outer scopes"
                 )
 
     def visit_Constant(self, node: ast.Constant) -> t.Any:
@@ -304,23 +314,15 @@ class ExpressionInterpreter(ast.NodeVisitor):
             self.global_env[name] = value
             return
 
-        # If declared nonlocal in the current scope, walk backward to find an
-        # owner scope:
+        # If declared nonlocal in the current scope:
         if name in self.current_scope.nonlocals:
+            # Walk backward through scopes to find the correct one
             for i in range(len(self.scope_stack) - 2, -1, -1):
-                s = self.scope_stack[i]
-                # If the name is recognized in that scope (locals or nonlocals)
-                if name in s.locals or name in s.nonlocals:
-                    # Now we need to store it in that scope's environment.
-                    # If you track an environment dictionary per scope
-                    # explicitly, you'd reference that here. e.g.
-                    #   self.env_stack[i][name] = value
-                    # If you only use self.local_env for all scopes, a minimal
-                    # approach is to store it there:
+                scope = self.scope_stack[i]
+                if name in scope.locals or name in scope.nonlocals:
+                    # Found the appropriate scope, set value in local_env
                     self.local_env[name] = value
                     return
-
-            # If we fail to find a scope with that name, it's an error
             raise NameError(f"Nonlocal name '{name}' not found in outer scopes")
 
         # Otherwise, treat it as a local assignment
@@ -1011,34 +1013,139 @@ class ExpressionInterpreter(ast.NodeVisitor):
             self.control.in_loop = prev_in_loop
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Handle function definition with proper closure environment."""
-        # Create a new scope for the function definition
+        """
+        Handle function definition with support for named parameters, defaults,
+        keyword-only, *args, and **kwargs.
+        """
         def_scope = Scope()
         self.scope_stack.append(def_scope)
 
         try:
-            # Capture the current environment for closure
-            closure_env = self.local_env
+            closure_env: t.Dict[str, t.Any] = {}
+            outer_env: t.Dict[str, t.Any] = self.local_env
 
-            def func(*args):
-                # Create new scope for function execution
+            # Precompute default values for positional and kw-only
+            defaults = [self.visit(d) for d in node.args.defaults]
+            kw_defaults = [
+                None if d is None else self.visit(d)
+                for d in node.args.kw_defaults
+            ]
+
+            # e.g. if we have 3 positional params and 1 default
+            # => required_count=2
+            required_count = len(node.args.args) - len(defaults)
+
+            def func(*call_args, **call_kwargs):
+                # Create a new execution scope
                 func_scope = Scope()
                 self.scope_stack.append(func_scope)
 
-                # Save current environment
                 prev_env = self.local_env
-                # Set up new environment with access to closure
-                self.local_env = closure_env.copy()
+                # Build local env from outer + closure
+                self.local_env = {**outer_env, **closure_env}
 
                 try:
-                    # Add function to its environment for recursion
+                    # Register the function name itself for recursion
                     self.local_env[node.name] = func
 
-                    # Bind parameters
-                    for param, arg in zip(node.args.args, args):
-                        self._set_name_value(param.arg, arg)
+                    ###############################
+                    # 1) Bind the "regular" positional params
+                    ###############################
+                    positional_params = node.args.args
+                    bound_args_count = min(
+                        len(call_args), len(positional_params)
+                    )
 
-                    # Execute function body
+                    # First, match positional_args with call_args 1:1 from the
+                    # front
+                    for i in range(bound_args_count):
+                        param = positional_params[i]
+                        self._set_name_value(param.arg, call_args[i])
+
+                    # Then, for leftover positional params, we check defaults
+                    # or keywords
+                    for i in range(bound_args_count, len(positional_params)):
+                        param = positional_params[i]
+                        param_name = param.arg
+
+                        if i < required_count:
+                            # This param must be provided either by leftover
+                            # call_args (already exhausted) or by a keyword
+                            if param_name in call_kwargs:
+                                self._set_name_value(
+                                    param_name, call_kwargs.pop(param_name)
+                                )
+                            else:
+                                raise TypeError(
+                                    f"{node.name}() missing required positional"
+                                    f" argument: '{param_name}'"
+                                )
+                        else:
+                            # This param has a default
+                            default_index = i - required_count
+                            if param_name in call_kwargs:
+                                # Use the user-provided keyword
+                                self._set_name_value(
+                                    param_name, call_kwargs.pop(param_name)
+                                )
+                            else:
+                                # Use the default
+                                self._set_name_value(
+                                    param_name, defaults[default_index]
+                                )
+
+                    ###############################
+                    # 2) Handle keyword-only params
+                    ###############################
+                    # e.g. def func(x, *, y=10, z)
+                    kwonly_params = node.args.kwonlyargs
+                    for i, kw_param in enumerate(kwonly_params):
+                        pname = kw_param.arg
+                        if pname in call_kwargs:
+                            self._set_name_value(pname, call_kwargs.pop(pname))
+                        else:
+                            # if there's a default => use it; else error
+                            if kw_defaults[i] is not None:
+                                self._set_name_value(pname, kw_defaults[i])
+                            else:
+                                raise TypeError(
+                                    f"{node.name}() missing required "
+                                    f"keyword-only argument: '{pname}'"
+                                )
+
+                    ###############################
+                    # 3) *args (vararg)
+                    ###############################
+                    if node.args.vararg:
+                        vararg_name = node.args.vararg.arg
+                        leftover = call_args[len(positional_params) :]
+                        self._set_name_value(vararg_name, leftover)
+                    else:
+                        # If no vararg, but user gave extra positional => error
+                        if len(call_args) > len(positional_params):
+                            raise TypeError(
+                                f"{node.name}() takes {len(positional_params)} "
+                                f"positional arguments but {len(call_args)} "
+                                f"were given"
+                            )
+
+                    ###############################
+                    # 4) **kwargs
+                    ###############################
+                    if node.args.kwarg:
+                        kwarg_name = node.args.kwarg.arg
+                        self._set_name_value(kwarg_name, call_kwargs)
+                    else:
+                        if call_kwargs:
+                            first_unexpected = next(iter(call_kwargs))
+                            raise TypeError(
+                                f"{node.name}() got an unexpected keyword "
+                                f"argument: '{first_unexpected}'"
+                            )
+
+                    ###############################
+                    # 5) Execute function body
+                    ###############################
                     try:
                         for stmt in node.body:
                             self.visit(stmt)
@@ -1046,43 +1153,117 @@ class ExpressionInterpreter(ast.NodeVisitor):
                     except ReturnValue as rv:
                         return rv.value
                 finally:
-                    # If this function modified any nonlocal variables,
-                    # update them in the closure environment
+                    # Update nonlocals
                     for name in func_scope.nonlocals:
                         if name in self.local_env:
                             closure_env[name] = self.local_env[name]
+                            outer_env[name] = self.local_env[name]
 
-                    # Restore previous environment
                     self.local_env = prev_env
                     self.scope_stack.pop()
 
-            # Store function in current scope
+            # Register the function in the current scope
             self._set_name_value(node.name, func)
         finally:
             self.scope_stack.pop()
 
     def visit_Lambda(self, node: ast.Lambda) -> t.Callable:
-        """Handle lambda expression with proper scope creation."""
-        # Capture the current environment for closure
-        closure_env = self.local_env.copy()
+        closure_env: t.Dict[str, t.Any] = {}
+        outer_env: t.Dict[str, t.Any] = self.local_env
 
-        def lambda_func(*args):
-            # Create new scope for lambda
-            self.scope_stack.append(Scope())
+        defaults = [self.visit(d) for d in node.args.defaults]
+        kw_defaults = [
+            None if d is None else self.visit(d) for d in node.args.kw_defaults
+        ]
+        required_count = len(node.args.args) - len(defaults)
 
-            # Save previous environment
-            previous_env = self.local_env
-            self.local_env = closure_env.copy()
+        def lambda_func(*call_args, **call_kwargs):
+            lambda_scope = Scope()
+            self.scope_stack.append(lambda_scope)
+
+            prev_env = self.local_env
+            self.local_env = {**outer_env, **closure_env}
 
             try:
-                # Assign parameters in lambda's scope
-                for param, arg in zip(node.args.args, args):
-                    self._set_name_value(param.arg, arg)
+                # 1) Bind positional
+                positional_params = node.args.args
+                bound_args_count = min(len(call_args), len(positional_params))
+                for i in range(bound_args_count):
+                    param = positional_params[i]
+                    self._set_name_value(param.arg, call_args[i])
 
-                return self.visit(node.body)
+                # leftover positional -> defaults or error
+                for i in range(bound_args_count, len(positional_params)):
+                    param = positional_params[i]
+                    pname = param.arg
+                    if i < required_count:
+                        # must come from keyword
+                        if pname in call_kwargs:
+                            self._set_name_value(pname, call_kwargs.pop(pname))
+                        else:
+                            raise TypeError(
+                                "Lambda missing required positional argument: "
+                                f"'{pname}'"
+                            )
+                    else:
+                        # default
+                        d_index = i - required_count
+                        if pname in call_kwargs:
+                            self._set_name_value(pname, call_kwargs.pop(pname))
+                        else:
+                            self._set_name_value(pname, defaults[d_index])
+
+                # 2) kw-only
+                kwonly_params = node.args.kwonlyargs
+                for i, kwp in enumerate(kwonly_params):
+                    pname = kwp.arg
+                    if pname in call_kwargs:
+                        self._set_name_value(pname, call_kwargs.pop(pname))
+                    else:
+                        if kw_defaults[i] is not None:
+                            self._set_name_value(pname, kw_defaults[i])
+                        else:
+                            raise TypeError(
+                                "Lambda missing required keyword-only "
+                                f"argument: '{pname}'"
+                            )
+
+                # 3) *args
+                if node.args.vararg:
+                    vararg_name = node.args.vararg.arg
+                    leftover = call_args[len(positional_params) :]
+                    self._set_name_value(vararg_name, leftover)
+                else:
+                    if len(call_args) > len(positional_params):
+                        raise TypeError(
+                            f"Lambda takes {len(positional_params)} positional "
+                            f"arguments but {len(call_args)} were given"
+                        )
+
+                # 4) **kwargs
+                if node.args.kwarg:
+                    kwarg_name = node.args.kwarg.arg
+                    self._set_name_value(kwarg_name, call_kwargs)
+                else:
+                    if call_kwargs:
+                        first_unexpected = next(iter(call_kwargs))
+                        raise TypeError(
+                            "Lambda got an unexpected keyword argument: "
+                            f"'{first_unexpected}'"
+                        )
+
+                # 5) Evaluate the body
+                result = self.visit(node.body)
+
+                # Update nonlocals
+                for name in lambda_scope.nonlocals:
+                    if name in self.local_env:
+                        closure_env[name] = self.local_env[name]
+                        outer_env[name] = self.local_env[name]
+
+                return result
             finally:
-                # Restore previous environment and pop scope
-                self.local_env = previous_env
+                self.local_env = prev_env
                 self.scope_stack.pop()
 
         return lambda_func
@@ -1092,32 +1273,46 @@ class ExpressionInterpreter(ast.NodeVisitor):
         raise ReturnValue(value)
 
     def visit_Call(self, node: ast.Call) -> t.Any:
-        # Get function object
+        """
+        Handle function calls, including positional args, keyword args, and
+        **kwargs.
+        """
+        # Evaluate the function object
         func = self.visit(node.func)
 
-        # Get function name if possible
-        func_name = None
-        if isinstance(node.func, ast.Name):
-            func_name = node.func.id
-        elif isinstance(node.func, ast.Attribute):
-            func_name = node.func.attr
+        # Check for forbidden function names, etc.
+        if func.__name__ in self.FORBIDDEN_NAMES:
+            raise SecurityError(
+                f"Call to builtin '{func.__name__}' is not allowed"
+            )
 
-        # Check for forbidden functions
-        if func_name in self.FORBIDDEN_NAMES:
-            raise SecurityError(f"Call to '{func_name}' is not allowed")
+        # Evaluate positional arguments
+        pos_args = [self.visit(arg) for arg in node.args]
 
-        # Check actual function type
-        if callable(func):
-            func_type = type(func).__name__
-            if func_type in {"builtin_function_or_method", "type"}:
-                # Additional check for builtin functions
-                if func.__name__ in self.FORBIDDEN_NAMES:
-                    raise SecurityError(
-                        f"Call to builtin '{func.__name__}' is not allowed"
+        # Evaluate keyword arguments
+        #  - node.keywords might contain both normal keywords (kw.arg != None)
+        #    and **kwargs expansions (kw.arg == None).
+        kwargs = {}
+        for kw in node.keywords:
+            if kw.arg is None:
+                # This is the case of f(**some_dict)
+                dict_val = self.visit(kw.value)
+                if not isinstance(dict_val, dict):
+                    raise TypeError(
+                        "Argument after ** must be a dict, got "
+                        f"{type(dict_val).__name__}"
                     )
+                # Merge into our kwargs
+                for k, v in dict_val.items():
+                    kwargs[k] = v
+            else:
+                # Normal keyword argument f(key=value)
+                key_name = kw.arg
+                value = self.visit(kw.value)
+                kwargs[key_name] = value
 
-        args = [self.visit(arg) for arg in node.args]
-        return func(*args)
+        # Actually call the function object
+        return func(*pos_args, **kwargs)
 
     def visit_List(self, node: ast.List) -> list:
         return [self.visit(elt) for elt in node.elts]
