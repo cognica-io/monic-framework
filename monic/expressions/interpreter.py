@@ -584,6 +584,31 @@ class ExpressionInterpreter(ast.NodeVisitor):
         self.local_env[node.target.id] = value
         return value
 
+    def visit_BoolOp(self, node: ast.BoolOp) -> t.Any:
+        """Handle logical AND and OR with Python's short-circuit behavior."""
+        if isinstance(node.op, ast.And):
+            # "and" should return the first falsy value, or the last value if
+            # all are truthy
+            result = True
+            for value_node in node.values:
+                result = self.visit(value_node)
+                if not result:
+                    return result  # Short-circuit on falsy
+            return result
+        elif isinstance(node.op, ast.Or):
+            # "or" should return the first truthy value, or the last value if
+            # all are falsy
+            result = False
+            for value_node in node.values:
+                result = self.visit(value_node)
+                if result:
+                    return result  # Short-circuit on truthy
+            return result
+        else:
+            raise NotImplementedError(
+                f"Unsupported BoolOp operator: {type(node.op).__name__}"
+            )
+
     def visit_UnaryOp(self, node: ast.UnaryOp) -> t.Any:
         operand = self.visit(node.operand)
 
