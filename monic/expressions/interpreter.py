@@ -1391,40 +1391,56 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         comp_scope = Scope()
         self.scope_stack.append(comp_scope)
 
-        # Copy the outer environment so that we can track changes
+        # Copy the outer environment
         outer_env = self.local_env
         self.local_env = outer_env.copy()
 
         try:
             result = []
-            # Process all generators (for n in numbers, etc.)
-            for generator in node.generators:
+
+            def process_generator(generators: list, index: int = 0):
+                if index >= len(generators):
+                    # Base case: all generators processed, evaluate element
+                    value = self.visit(node.elt)
+                    result.append(value)
+                    return
+
+                generator = generators[index]
                 iter_obj = self.visit(generator.iter)
+
+                # Save the current environment before processing this generator
+                current_env = self.local_env.copy()
+
                 for item in iter_obj:
+                    # Restore environment from before this generator's loop
+                    self.local_env = current_env.copy()
+
                     try:
                         self._handle_unpacking_target(generator.target, item)
                     except UnsupportedUnpackingError:
-                        # If unpacking fails, fallback to simple assignment
                         if isinstance(generator.target, ast.Name):
                             self._set_name_value(generator.target.id, item)
                         else:
                             raise
 
-                    # Evaluate ifs
+                    # Check if conditions
+                    # Named expressions in conditions should affect outer scope
                     if all(
                         self.visit(if_clause) for if_clause in generator.ifs
                     ):
-                        # Append the comprehension element
-                        result.append(self.visit(node.elt))
+                        # Process next generator or append result
+                        process_generator(generators, index + 1)
 
-            # Build the final list or set
+                    # Update outer environment with any named expression
+                    # bindings
+                    for name, value in self.local_env.items():
+                        if name not in current_env:
+                            outer_env[name] = value
+
+            # Start processing generators recursively
+            process_generator(node.generators)
             return result_type(result)
         finally:
-            # Merge any new/updated bindings from the comprehension scope back
-            # into the parent
-            for key, val in self.local_env.items():
-                outer_env[key] = val
-
             # Restore the outer environment and pop the scope
             self.local_env = outer_env
             self.scope_stack.pop()
