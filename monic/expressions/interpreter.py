@@ -53,7 +53,8 @@ class Scope:
 class ControlFlow:
     """Record for tracking control flow state."""
 
-    in_loop: bool = False
+    function_depth: int = 0
+    loop_depth: int = 0
 
 
 class ExpressionInterpreter(ast.NodeVisitor):
@@ -940,7 +941,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
         self, node: ast.Break  # pylint: disable=unused-argument
     ) -> None:
         """Handle break statement."""
-        if not self.control.in_loop:
+        if self.control.loop_depth == 0:
             raise SyntaxError("'break' outside loop")
         raise BreakLoop()
 
@@ -948,13 +949,12 @@ class ExpressionInterpreter(ast.NodeVisitor):
         self, node: ast.Continue  # pylint: disable=unused-argument
     ) -> None:
         """Handle continue statement."""
-        if not self.control.in_loop:
+        if self.control.loop_depth == 0:
             raise SyntaxError("'continue' outside loop")
         raise ContinueLoop()
 
     def visit_While(self, node: ast.While) -> None:
-        prev_in_loop = self.control.in_loop
-        self.control.in_loop = True
+        self.control.loop_depth += 1
 
         try:
             while True:
@@ -981,11 +981,10 @@ class ExpressionInterpreter(ast.NodeVisitor):
                             self.visit(stmt)
                     raise e
         finally:
-            self.control.in_loop = prev_in_loop
+            self.control.loop_depth -= 1
 
     def visit_For(self, node: ast.For) -> None:
-        prev_in_loop = self.control.in_loop
-        self.control.in_loop = True
+        self.control.loop_depth += 1
 
         iter_value = self.visit(node.iter)
 
@@ -1013,7 +1012,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
                     self.visit(stmt)
             raise e
         finally:
-            self.control.in_loop = prev_in_loop
+            self.control.loop_depth -= 1
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """
@@ -1046,6 +1045,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 prev_env = self.local_env
                 # Build local env from outer + closure
                 self.local_env = {**outer_env, **closure_env}
+
+                self.control.function_depth += 1
 
                 try:
                     # Register the function name itself for recursion
@@ -1156,6 +1157,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
                     except ReturnValue as rv:
                         return rv.value
                 finally:
+                    self.control.function_depth -= 1
+
                     # Update nonlocals
                     for name in func_scope.nonlocals:
                         if name in self.local_env:
@@ -1272,6 +1275,9 @@ class ExpressionInterpreter(ast.NodeVisitor):
         return lambda_func
 
     def visit_Return(self, node: ast.Return) -> None:
+        if self.control.function_depth == 0:
+            raise SyntaxError("'return' outside function")
+
         value = None if node.value is None else self.visit(node.value)
         raise ReturnValue(value)
 
