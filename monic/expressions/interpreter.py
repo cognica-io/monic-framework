@@ -6,7 +6,7 @@
 
 # pylint: disable=no-else-return,no-else-raise,broad-except
 # pylint: disable=too-many-branches,too-many-return-statements,too-many-locals
-# pylint: disable=too-many-public-methods
+# pylint: disable=too-many-public-methods,too-many-instance-attributes
 
 import ast
 import datetime
@@ -190,7 +190,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
             elapsed = time.monotonic() - self.started_at
             if elapsed > self.context.timeout:
                 raise TimeoutError(
-                    f"Execution exceeded timeout of {self.context.timeout} seconds"
+                    "Execution exceeded timeout of "
+                    f"{self.context.timeout} seconds"
                 )
 
         # Get the visitor method for this node type
@@ -295,24 +296,27 @@ class ExpressionInterpreter(ast.NodeVisitor):
 
     def _set_name_value(self, name: str, value: t.Any) -> None:
         """
-        Set the value of a name, considering 'global' and 'nonlocal' declarations.
+        Set the value of a name, considering 'global' and 'nonlocal'
+        declarations.
         """
         # If declared global in the current scope:
         if name in self.current_scope.globals:
             self.global_env[name] = value
             return
 
-        # If declared nonlocal in the current scope, walk backward to find an owner scope:
+        # If declared nonlocal in the current scope, walk backward to find an
+        # owner scope:
         if name in self.current_scope.nonlocals:
             for i in range(len(self.scope_stack) - 2, -1, -1):
                 s = self.scope_stack[i]
                 # If the name is recognized in that scope (locals or nonlocals)
                 if name in s.locals or name in s.nonlocals:
                     # Now we need to store it in that scope's environment.
-                    # If you track an environment dictionary per scope explicitly,
-                    #      you'd reference that here. e.g. self.env_stack[i][name] = value
-                    # If you only use self.local_env for all scopes,
-                    #      a minimal approach is to store it there:
+                    # If you track an environment dictionary per scope
+                    # explicitly, you'd reference that here. e.g.
+                    #   self.env_stack[i][name] = value
+                    # If you only use self.local_env for all scopes, a minimal
+                    # approach is to store it there:
                     self.local_env[name] = value
                     return
 
