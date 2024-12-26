@@ -97,8 +97,6 @@ def test_named_expr_error():
     """Test invalid target"""
     code = "(1 := 42)"  # Can't assign to literal
     parser = ExpressionsParser()
-    interpreter = ExpressionsInterpreter()
 
     with pytest.raises(SyntaxError):
         tree = parser.parse(code)
-        interpreter.execute(tree)
