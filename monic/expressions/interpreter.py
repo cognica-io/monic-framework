@@ -219,28 +219,28 @@ class ExpressionInterpreter(ast.NodeVisitor):
         Raises:
             SecurityError: If dangerous operations are detected
         """
-        for node in ast.walk(node):
+        for op in ast.walk(node):
             # Check for forbidden function calls
-            if isinstance(node, ast.Name) and node.id in self.FORBIDDEN_NAMES:
-                raise SecurityError(f"Use of '{node.id}' is not allowed")
+            if isinstance(op, ast.Name) and op.id in self.FORBIDDEN_NAMES:
+                raise SecurityError(f"Use of '{op.id}' is not allowed")
 
             # Check for forbidden attribute access
             if (
-                isinstance(node, ast.Attribute)
-                and node.attr in self.FORBIDDEN_ATTRS
+                isinstance(op, ast.Attribute)
+                and op.attr in self.FORBIDDEN_ATTRS
             ):
                 raise SecurityError(
-                    f"Access to '{node.attr}' attribute is not allowed"
+                    f"Access to '{op.attr}' attribute is not allowed"
                 )
 
             # Check for __builtins__ access
-            if isinstance(node, ast.Name) and node.id == "__builtins__":
+            if isinstance(op, ast.Name) and op.id == "__builtins__":
                 raise SecurityError(
                     "Access to '__builtins__' attribute is not allowed"
                 )
 
             # Check for import statements
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if isinstance(op, (ast.Import, ast.ImportFrom)):
                 raise SecurityError("Import statements are not allowed")
 
     def visit_Global(self, node: ast.Global) -> None:
