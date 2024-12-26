@@ -5,17 +5,17 @@
 #
 
 from monic.expressions import (
-    ExpressionContext,
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsContext,
+    ExpressionsParser,
+    ExpressionsInterpreter,
 )
 
 
 def test_pass_standalone():
     """Test pass statement as a standalone statement."""
-    parser = ExpressionParser()
-    context = ExpressionContext()
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext()
+    interpreter = ExpressionsInterpreter(context)
 
     pass_code = parser.parse(
         """
@@ -29,9 +29,9 @@ pass
 
 def test_pass_in_function():
     """Test pass statement inside a function definition."""
-    parser = ExpressionParser()
-    context = ExpressionContext()
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext()
+    interpreter = ExpressionsInterpreter(context)
 
     pass_in_function_code = parser.parse(
         """
@@ -48,9 +48,9 @@ dummy_function()
 
 def test_pass_in_conditional():
     """Test pass statement in an if-else block."""
-    parser = ExpressionParser()
-    context = ExpressionContext()
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext()
+    interpreter = ExpressionsInterpreter(context)
 
     pass_in_conditional_code = parser.parse(
         """
@@ -72,9 +72,9 @@ x
 
 def test_pass_in_loop():
     """Test pass statement in a loop."""
-    parser = ExpressionParser()
-    context = ExpressionContext()
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext()
+    interpreter = ExpressionsInterpreter(context)
 
     pass_in_loop_code = parser.parse(
         """
@@ -96,9 +96,9 @@ result
 
 def test_multiple_pass_statements():
     """Test multiple pass statements in sequence."""
-    parser = ExpressionParser()
-    context = ExpressionContext()
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext()
+    interpreter = ExpressionsInterpreter(context)
 
     multiple_pass_code = parser.parse(
         """

@@ -8,7 +8,7 @@ import ast
 import textwrap
 
 
-class ExpressionParser:
+class ExpressionsParser:
     def __init__(self) -> None:
         pass
 

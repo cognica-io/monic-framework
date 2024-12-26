@@ -7,17 +7,17 @@
 import pytest
 
 from monic.expressions import (
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsParser,
+    ExpressionsInterpreter,
 )
 
 
 def test_named_expr_basic():
     """Test basic assignment and return value"""
     code = "(x := 42)"
-    parser = ExpressionParser()
+    parser = ExpressionsParser()
     tree = parser.parse(code)
-    interpreter = ExpressionInterpreter()
+    interpreter = ExpressionsInterpreter()
     result = interpreter.execute(tree)
 
     assert result == 42  # Check return value
@@ -30,9 +30,9 @@ def test_named_expr_in_if():
 if (x := 10) > 5:
     y = x * 2
     """
-    parser = ExpressionParser()
+    parser = ExpressionsParser()
     tree = parser.parse(code)
-    interpreter = ExpressionInterpreter()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(tree)
 
     assert interpreter.get_name_value("x") == 10
@@ -47,9 +47,9 @@ i = 0
 while (n := nums[i]) < 3:
     i += 1
     """
-    parser = ExpressionParser()
+    parser = ExpressionsParser()
     tree = parser.parse(code)
-    interpreter = ExpressionInterpreter()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(tree)
 
     # Last value checked in while condition
@@ -64,9 +64,9 @@ def test_named_expr_in_comprehension():
 numbers = [1, 2, 3, 4]
 [y for n in numbers if (y := n * 2) > 5]
 """
-    parser = ExpressionParser()
+    parser = ExpressionsParser()
     tree = parser.parse(code)
-    interpreter = ExpressionInterpreter()
+    interpreter = ExpressionsInterpreter()
     result = interpreter.execute(tree)
 
     assert result == [6, 8]  # Only values > 5
@@ -85,9 +85,9 @@ def outer():
     return x
 result = outer()
 """
-    parser = ExpressionParser()
+    parser = ExpressionsParser()
     tree = parser.parse(code)
-    interpreter = ExpressionInterpreter()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(tree)
 
     assert interpreter.get_name_value("result") == 200
@@ -96,8 +96,8 @@ result = outer()
 def test_named_expr_error():
     """Test invalid target"""
     code = "(1 := 42)"  # Can't assign to literal
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     with pytest.raises(SyntaxError):
         tree = parser.parse(code)

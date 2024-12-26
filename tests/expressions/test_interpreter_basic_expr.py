@@ -7,16 +7,16 @@
 import pytest
 
 from monic.expressions import (
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsParser,
+    ExpressionsInterpreter,
     SecurityError,
 )
 
 
 def test_basic_constant_evaluation():
     """Test basic constant evaluation"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     tree = parser.parse("42")
     result = interpreter.execute(tree)
     assert result == 42
@@ -24,8 +24,8 @@ def test_basic_constant_evaluation():
 
 def test_binary_operations():
     """Test various binary operations"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     test_cases = [
         ("2 + 3", 5),
         ("10 - 4", 6),
@@ -44,8 +44,8 @@ def test_binary_operations():
 
 def test_comparison_operations():
     """Test comparison operations"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     test_cases = [
         ("2 < 3", True),
         ("5 > 3", True),
@@ -65,8 +65,8 @@ def test_comparison_operations():
 
 def test_list_operations():
     """Test list-related operations"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # List creation
     tree = parser.parse("[1, 2, 3]")
@@ -81,8 +81,8 @@ def test_list_operations():
 
 def test_dict_operations():
     """Test dictionary-related operations"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Dict creation
     tree = parser.parse("{'a': 1, 'b': 2}")
@@ -97,8 +97,8 @@ def test_dict_operations():
 
 def test_lambda_function():
     """Test lambda function creation and execution"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Simple lambda
     tree = parser.parse("(lambda x: x * 2)(3)")
@@ -108,8 +108,8 @@ def test_lambda_function():
 
 def test_function_definition():
     """Test function definition and calling"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     code = """
 def square(x):
     return x * x
@@ -123,8 +123,8 @@ square(4)
 
 def test_list_unpacking():
     """Test list unpacking assignments"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Standard unpacking
     tree = parser.parse("a, b = [1, 2]")
@@ -141,8 +141,8 @@ def test_list_unpacking():
 
 def test_security_checks():
     """Test security-related checks"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Forbidden function calls
     forbidden_funcs = ["eval", "exec", "compile", "__import__"]
@@ -165,8 +165,8 @@ def test_security_checks():
 
 def test_error_handling():
     """Test error handling mechanisms"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Division by zero
     with pytest.raises(ZeroDivisionError):
@@ -181,8 +181,8 @@ def test_error_handling():
 
 def test_augmented_assignments():
     """Test augmented assignment operations"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Simple augmented assignment
     tree = parser.parse("x = 5; x += 3")
@@ -197,8 +197,8 @@ def test_augmented_assignments():
 
 def test_f_string_formatting():
     """Test f-string formatting capabilities"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Basic f-string
     tree = parser.parse("x = 42; f'The answer is {x}'")
@@ -213,8 +213,8 @@ def test_f_string_formatting():
 
 def test_slice_operations():
     """Test slice operations"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Basic slicing
     tree = parser.parse("lst = [0, 1, 2, 3, 4]; lst[1:4]")
@@ -229,8 +229,8 @@ def test_slice_operations():
 
 def test_try_except_handling():
     """Test try-except block handling"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Basic try-except
     code = """
@@ -247,8 +247,8 @@ x
 
 def test_break_statement():
     """Test break statement in loops"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Break in for loop
     code = """
@@ -281,8 +281,8 @@ result
 
 def test_continue_statement():
     """Test continue statement in loops"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Continue in for loop
     code = """

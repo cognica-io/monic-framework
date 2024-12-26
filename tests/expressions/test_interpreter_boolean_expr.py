@@ -7,8 +7,8 @@
 import pytest
 
 from monic.expressions import (
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsParser,
+    ExpressionsInterpreter,
 )
 
 
@@ -28,8 +28,8 @@ def test_and_operator(source, expected):
     """
     Test the 'and' boolean operator.
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     tree = parser.parse(source)
     result = interpreter.execute(tree)
     assert result == expected
@@ -51,8 +51,8 @@ def test_or_operator(source, expected):
     """
     Test the 'or' boolean operator.
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     tree = parser.parse(source)
     result = interpreter.execute(tree)
     assert result == expected
@@ -73,8 +73,8 @@ def test_not_operator(source, expected):
     """
     Test the 'not' boolean operator.
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     tree = parser.parse(source)
     result = interpreter.execute(tree)
     assert result == expected
@@ -107,8 +107,8 @@ def test_and_or_combinations(source, expected):
     """
     Test various combinations of 'and' and 'or'.
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     tree = parser.parse(source)
     result = interpreter.execute(tree)
     assert result == expected

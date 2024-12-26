@@ -9,17 +9,17 @@ import time
 import pytest
 
 from monic.expressions import (
-    ExpressionContext,
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsContext,
+    ExpressionsParser,
+    ExpressionsInterpreter,
 )
 
 
 def test_timeout_infinite_loop():
     """Test that an infinite loop raises a TimeoutError."""
-    parser = ExpressionParser()
-    context = ExpressionContext(timeout=0.1)
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext(timeout=0.1)
+    interpreter = ExpressionsInterpreter(context)
 
     infinite_loop_code = parser.parse(
         """
@@ -41,9 +41,9 @@ while True:
 
 def test_timeout_long_computation():
     """Test that a long-running computation raises a TimeoutError."""
-    parser = ExpressionParser()
-    context = ExpressionContext(timeout=0.1)
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext(timeout=0.1)
+    interpreter = ExpressionsInterpreter(context)
 
     long_computation_code = parser.parse(
         """
@@ -70,9 +70,9 @@ result = fibonacci(35)
 
 def test_no_timeout_short_computation():
     """Test that a short computation does not raise a TimeoutError."""
-    parser = ExpressionParser()
-    context = ExpressionContext(timeout=1.0)
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext(timeout=1.0)
+    interpreter = ExpressionsInterpreter(context)
 
     short_computation_code = parser.parse(
         """
@@ -94,9 +94,9 @@ result
 
 def test_timeout_none():
     """Test that when timeout is None, no timeout occurs."""
-    parser = ExpressionParser()
-    context = ExpressionContext(timeout=None)
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext(timeout=None)
+    interpreter = ExpressionsInterpreter(context)
 
     long_computation_code = parser.parse(
         """
@@ -122,9 +122,9 @@ result = fibonacci(28)
 
 def test_timeout_repeated_method_calls():
     """Test timeout mechanism works across multiple method calls."""
-    parser = ExpressionParser()
-    context = ExpressionContext(timeout=0.1)
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext(timeout=0.1)
+    interpreter = ExpressionsInterpreter(context)
 
     repeated_calls_code = parser.parse(
         """
@@ -154,9 +154,9 @@ result2 = slow_function()
 @pytest.mark.parametrize("timeout", [0.05, 0.1, 0.2])
 def test_timeout_variability(timeout):
     """Test timeout mechanism with different timeout values."""
-    parser = ExpressionParser()
-    context = ExpressionContext(timeout=timeout)
-    interpreter = ExpressionInterpreter(context)
+    parser = ExpressionsParser()
+    context = ExpressionsContext(timeout=timeout)
+    interpreter = ExpressionsInterpreter(context)
 
     long_computation_code = parser.parse(
         """

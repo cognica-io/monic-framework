@@ -7,16 +7,16 @@
 import pytest
 
 from monic.expressions import (
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsParser,
+    ExpressionsInterpreter,
     SecurityError,
 )
 
 
 def test_forbidden_function_call():
     """Test that calling a forbidden function raises a SecurityError."""
-    parser = ExpressionParser()
+    parser = ExpressionsParser()
     tree = parser.parse("time.sleep(1)")
-    interpreter = ExpressionInterpreter()
+    interpreter = ExpressionsInterpreter()
     with pytest.raises(SecurityError):
         interpreter.execute(tree)

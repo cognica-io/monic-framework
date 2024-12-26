@@ -7,20 +7,20 @@
 import pytest
 
 from monic.expressions import (
-    ExpressionContext,
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsContext,
+    ExpressionsParser,
+    ExpressionsInterpreter,
 )
 
 
 class TestWithStatement:
     @pytest.fixture
     def parser(self):
-        return ExpressionParser()
+        return ExpressionsParser()
 
     @pytest.fixture
     def interpreter(self):
-        return ExpressionInterpreter(ExpressionContext())
+        return ExpressionsInterpreter(ExpressionsContext())
 
     class SimpleContextManager:
         def __init__(self):

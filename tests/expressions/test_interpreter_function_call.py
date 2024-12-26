@@ -7,8 +7,8 @@
 import pytest
 
 from monic.expressions import (
-    ExpressionParser,
-    ExpressionInterpreter,
+    ExpressionsParser,
+    ExpressionsInterpreter,
 )
 
 
@@ -19,8 +19,8 @@ def test_basic_function():
         return x + y
     result = add(2, 3)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result") == 5
 
@@ -33,8 +33,8 @@ def test_function_default_args():
     result1 = greet("World")
     result2 = greet("Python", greeting="Hi")
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result1") == "Hello, World!"
     assert interpreter.get_name_value("result2") == "Hi, Python!"
@@ -47,8 +47,8 @@ def test_function_keyword_only_args():
         return f"Processing {data} with {format} (strict={strict})"
     result = process("data", format="xml", strict=False)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert (
         interpreter.get_name_value("result")
@@ -63,8 +63,8 @@ def test_function_varargs():
         return sum(args)
     result = sum_all(1, 2, 3, 4, 5)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result") == 15
 
@@ -79,8 +79,8 @@ def test_function_kwargs():
         return ", ".join(parts)
     result = format_user(name="John", age=30, city="New York")
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert (
         interpreter.get_name_value("result")
@@ -98,8 +98,8 @@ def test_function_all_arg_types():
         return ", ".join(parts)
     result = complex_func(1, "custom", 3, 4, 5, c="c_val", x=10, y=20)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert (
         interpreter.get_name_value("result")
@@ -116,8 +116,8 @@ def test_function_recursion():
         return n * factorial(n - 1)
     result = factorial(5)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result") == 120
 
@@ -128,8 +128,8 @@ def test_lambda_basic():
     multiply = lambda x, y: x * y
     result = multiply(3, 4)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result") == 12
 
@@ -141,8 +141,8 @@ def test_lambda_with_defaults():
     result1 = greet("World")
     result2 = greet("Python", greeting="Hi")
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result1") == "Hello, World!"
     assert interpreter.get_name_value("result2") == "Hi, Python!"
@@ -154,8 +154,8 @@ def test_lambda_with_varargs():
     sum_all = lambda *args: sum(args)
     result = sum_all(1, 2, 3, 4, 5)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result") == 15
 
@@ -170,8 +170,8 @@ def test_lambda_with_closure():
     result1 = double(5)
     result2 = triple(5)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result1") == 10
     assert interpreter.get_name_value("result2") == 15
@@ -179,8 +179,8 @@ def test_lambda_with_closure():
 
 def test_function_error_cases():
     """Test various error cases in function calls"""
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
 
     # Missing required argument
     with pytest.raises(TypeError):
@@ -236,8 +236,8 @@ def test_nested_function_scope():
         return inner()
     result = outer(5)
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result") == 10
 
@@ -258,8 +258,8 @@ def test_function_nonlocal():
     result2 = inc()
     result3 = inc()
     """
-    parser = ExpressionParser()
-    interpreter = ExpressionInterpreter()
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("result1") == 1
     assert interpreter.get_name_value("result2") == 2

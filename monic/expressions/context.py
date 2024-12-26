@@ -9,6 +9,6 @@ from dataclasses import dataclass
 
 
 @dataclass
-class ExpressionContext:
+class ExpressionsContext:
     # The timeout for evaluating the expression in seconds.
     timeout: t.Optional[float] = 10.0

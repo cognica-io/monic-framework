@@ -17,7 +17,7 @@ import typing as t
 
 from dataclasses import dataclass, field
 
-from monic.expressions.context import ExpressionContext
+from monic.expressions.context import ExpressionsContext
 from monic.expressions.exceptions import (
     SecurityError,
     UnsupportedUnpackingError,
@@ -57,11 +57,11 @@ class ControlFlow:
     loop_depth: int = 0
 
 
-class ExpressionInterpreter(ast.NodeVisitor):
-    def __init__(self, context: t.Optional[ExpressionContext] = None) -> None:
+class ExpressionsInterpreter(ast.NodeVisitor):
+    def __init__(self, context: t.Optional[ExpressionsContext] = None) -> None:
         self.started_at = time.monotonic()
 
-        self.context = context or ExpressionContext()
+        self.context = context or ExpressionsContext()
         self.scope_stack: t.List[Scope] = [Scope()]  # Track scopes
         self.control: ControlFlow = ControlFlow()
 
