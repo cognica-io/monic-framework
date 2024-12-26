@@ -24,6 +24,8 @@ from monic.expressions.exceptions import (
 
 
 class ReturnValue(Exception):
+    """Raised to return a value from a function."""
+
     def __init__(self, value):
         self.value = value
 
@@ -144,10 +146,11 @@ class ExpressionInterpreter(ast.NodeVisitor):
         return self.scope_stack[-1]
 
     def execute(self, tree: ast.AST) -> t.Any:
+        """Execute an AST."""
         # Perform security check
         self._check_security(tree)
 
-        # Start the timer
+        # Reset the timer for timeout tracking
         self.started_at = time.monotonic()
 
         try:
@@ -171,18 +174,26 @@ class ExpressionInterpreter(ast.NodeVisitor):
                 result = self.visit(tree)
                 self.global_env["_"] = result
                 return result
+        except TimeoutError as e:
+            raise e
         except Exception as e:
             raise type(e)(f"Runtime error: {str(e)}") from e
 
-    def visit(self, node: ast.AST) -> t.Any:
-        """Visit a node."""
-        # Check for timeout
-        elapsed = time.monotonic() - self.started_at
-        if self.context.timeout is not None and elapsed > self.context.timeout:
-            raise TimeoutError(
-                f"Execution timed out after {elapsed:.2f} seconds"
-            )
+    def get_name_value(self, name: str) -> t.Any:
+        """Get the value of a name in the current scope."""
+        return self._get_name_value(name)
 
+    def visit(self, node: ast.AST) -> t.Any:
+        """Visit a node and check for timeout."""
+        # Check for timeout if one is set
+        if self.context.timeout is not None:
+            elapsed = time.monotonic() - self.started_at
+            if elapsed > self.context.timeout:
+                raise TimeoutError(
+                    f"Execution exceeded timeout of {self.context.timeout} seconds"
+                )
+
+        # Get the visitor method for this node type
         method = "visit_" + node.__class__.__name__
         visitor = getattr(self, method, self.generic_visit)
         return visitor(node)
@@ -238,11 +249,28 @@ class ExpressionInterpreter(ast.NodeVisitor):
             self.current_scope.locals.discard(name)
 
     def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
-        """Handle nonlocal declarations."""
+        """
+        Handle 'nonlocal' statements, e.g.:
+            nonlocal x, y
+
+        This marks the given names as nonlocal for the current scope,
+        and ensures the names actually exist in an outer scope.
+        """
         for name in node.names:
+            # Mark as nonlocal in the current scope
             self.current_scope.nonlocals.add(name)
-            # Remove from locals if present
-            self.current_scope.locals.discard(name)
+
+            # Ensure at least one outer scope has the name
+            found = False
+            for scope in reversed(self.scope_stack[:-1]):
+                # If name is declared local or already nonlocal in that scope
+                if (name in scope.locals) or (name in scope.nonlocals):
+                    found = True
+                    break
+            if not found:
+                raise SyntaxError(
+                    f"No binding for nonlocal '{name}' found in outer scopes"
+                )
 
     def visit_Constant(self, node: ast.Constant) -> t.Any:
         return node.value
@@ -266,20 +294,34 @@ class ExpressionInterpreter(ast.NodeVisitor):
         raise NameError(f"Name '{name}' is not defined")
 
     def _set_name_value(self, name: str, value: t.Any) -> None:
-        """Set value of a name considering scope declarations."""
+        """
+        Set the value of a name, considering 'global' and 'nonlocal' declarations.
+        """
+        # If declared global in the current scope:
         if name in self.current_scope.globals:
             self.global_env[name] = value
-        elif name in self.current_scope.nonlocals:
-            # Search for name in outer scopes to update
-            for scope in reversed(self.scope_stack[:-1]):
-                if name in scope.locals:
+            return
+
+        # If declared nonlocal in the current scope, walk backward to find an owner scope:
+        if name in self.current_scope.nonlocals:
+            for i in range(len(self.scope_stack) - 2, -1, -1):
+                s = self.scope_stack[i]
+                # If the name is recognized in that scope (locals or nonlocals)
+                if name in s.locals or name in s.nonlocals:
+                    # Now we need to store it in that scope's environment.
+                    # If you track an environment dictionary per scope explicitly,
+                    #      you'd reference that here. e.g. self.env_stack[i][name] = value
+                    # If you only use self.local_env for all scopes,
+                    #      a minimal approach is to store it there:
                     self.local_env[name] = value
                     return
-            raise NameError(f"Nonlocal name '{name}' is not defined")
-        else:
-            # If not declared global/nonlocal, assign in current scope
-            self.current_scope.locals.add(name)
-            self.local_env[name] = value
+
+            # If we fail to find a scope with that name, it's an error
+            raise NameError(f"Nonlocal name '{name}' not found in outer scopes")
+
+        # Otherwise, treat it as a local assignment
+        self.current_scope.locals.add(name)
+        self.local_env[name] = value
 
     def _del_name_value(self, name: str) -> None:
         """Delete a name from the appropriate scope."""
@@ -513,6 +555,30 @@ class ExpressionInterpreter(ast.NodeVisitor):
             raise UnsupportedUnpackingError(
                 f"Unsupported unpacking target type: {type(target).__name__}"
             )
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> t.Any:
+        """Handle named expressions (walrus operator).
+
+        Example: (x := 1) assigns 1 to x and returns 1
+        """
+        value = self.visit(node.value)
+
+        # The target should be a Name node
+        if not isinstance(node.target, ast.Name):
+            raise SyntaxError("Invalid target for named expression")
+
+        # Named expressions bind in the containing scope
+        if len(self.scope_stack) > 1:
+            # If we're in a nested scope, add to the parent scope
+            parent_scope = self.scope_stack[-2]
+            parent_scope.locals.add(node.target.id)
+        else:
+            # In the global scope, add to current scope
+            self.current_scope.locals.add(node.target.id)
+
+        # Set the value in the current environment
+        self.local_env[node.target.id] = value
+        return value
 
     def visit_UnaryOp(self, node: ast.UnaryOp) -> t.Any:
         operand = self.visit(node.operand)
@@ -849,7 +915,11 @@ class ExpressionInterpreter(ast.NodeVisitor):
         self.control.in_loop = True
 
         try:
-            while self.visit(node.test):
+            while True:
+                test_result = self.visit(node.test)  # Evaluate test first
+                if not test_result:
+                    break
+
                 try:
                     for stmt in node.body:
                         try:
@@ -904,41 +974,55 @@ class ExpressionInterpreter(ast.NodeVisitor):
             self.control.in_loop = prev_in_loop
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """Handle function definition with proper scope creation."""
-        # Capture the current environment for closure
-        closure_env = self.local_env.copy()
+        """Handle function definition with proper closure environment."""
+        # Create a new scope for the function definition
+        def_scope = Scope()
+        self.scope_stack.append(def_scope)
 
-        def func(*args):
-            # Create new scope for function
-            func_scope = Scope()
-            self.scope_stack.append(func_scope)
+        try:
+            # Capture the current environment for closure
+            closure_env = self.local_env
 
-            # Set up function's environment with closure variables
-            previous_env = self.local_env
-            self.local_env = closure_env.copy()
+            def func(*args):
+                # Create new scope for function execution
+                func_scope = Scope()
+                self.scope_stack.append(func_scope)
 
-            try:
-                # Add function to its own environment for recursion
-                self.local_env[node.name] = func
+                # Save current environment
+                prev_env = self.local_env
+                # Set up new environment with access to closure
+                self.local_env = closure_env.copy()
 
-                # Assign parameters in function's scope
-                for param, arg in zip(node.args.args, args):
-                    self._set_name_value(param.arg, arg)
-
-                # Execute function body
                 try:
-                    for stmt in node.body:
-                        self.visit(stmt)
-                    return None
-                except ReturnValue as rv:
-                    return rv.value
-            finally:
-                # Restore previous environment and pop scope
-                self.local_env = previous_env
-                self.scope_stack.pop()
+                    # Add function to its environment for recursion
+                    self.local_env[node.name] = func
 
-        # Store function in current scope
-        self._set_name_value(node.name, func)
+                    # Bind parameters
+                    for param, arg in zip(node.args.args, args):
+                        self._set_name_value(param.arg, arg)
+
+                    # Execute function body
+                    try:
+                        for stmt in node.body:
+                            self.visit(stmt)
+                        return None
+                    except ReturnValue as rv:
+                        return rv.value
+                finally:
+                    # If this function modified any nonlocal variables,
+                    # update them in the closure environment
+                    for name in func_scope.nonlocals:
+                        if name in self.local_env:
+                            closure_env[name] = self.local_env[name]
+
+                    # Restore previous environment
+                    self.local_env = prev_env
+                    self.scope_stack.pop()
+
+            # Store function in current scope
+            self._set_name_value(node.name, func)
+        finally:
+            self.scope_stack.pop()
 
     def visit_Lambda(self, node: ast.Lambda) -> t.Callable:
         """Handle lambda expression with proper scope creation."""
@@ -1058,36 +1142,47 @@ class ExpressionInterpreter(ast.NodeVisitor):
     def _handle_comprehension(
         self, node: ast.ListComp | ast.SetComp, result_type: t.Type[T]
     ) -> T:
-        # Preserve the current local environment
-        outer_env = self.local_env.copy()
-        self.local_env = self.local_env.copy()
+        # Create new scope for the comprehension
+        comp_scope = Scope()
+        self.scope_stack.append(comp_scope)
+
+        # Copy the outer environment so that we can track changes
+        outer_env = self.local_env
+        self.local_env = outer_env.copy()
 
         try:
             result = []
+            # Process all generators (for n in numbers, etc.)
             for generator in node.generators:
                 iter_obj = self.visit(generator.iter)
-
                 for item in iter_obj:
                     try:
                         self._handle_unpacking_target(generator.target, item)
                     except UnsupportedUnpackingError:
                         # If unpacking fails, fallback to simple assignment
                         if isinstance(generator.target, ast.Name):
-                            self.local_env[generator.target.id] = item
+                            self._set_name_value(generator.target.id, item)
                         else:
                             raise
 
-                    # Check if all conditions are met
+                    # Evaluate ifs
                     if all(
                         self.visit(if_clause) for if_clause in generator.ifs
                     ):
-                        # Evaluate the element
+                        # Append the comprehension element
                         result.append(self.visit(node.elt))
 
+            # Build the final list or set
             return result_type(result)
         finally:
-            # Restore the original local environment
+            # Merge any new/updated bindings from the comprehension scope back
+            # into the parent
+            for key, val in self.local_env.items():
+                outer_env[key] = val
+
+            # Restore the outer environment and pop the scope
             self.local_env = outer_env
+            self.scope_stack.pop()
 
     def visit_JoinedStr(self, node: ast.JoinedStr) -> str:
         parts = []
