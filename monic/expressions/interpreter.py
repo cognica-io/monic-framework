@@ -120,6 +120,7 @@ class ExpressionInterpreter(ast.NodeVisitor):
 
         # List of forbidden functions and modules
         self.FORBIDDEN_NAMES = {
+            # Built-in functions
             "eval",
             "exec",
             "compile",
@@ -129,6 +130,8 @@ class ExpressionInterpreter(ast.NodeVisitor):
             "locals",
             "vars",
             "__import__",
+            # Module functions
+            "time.sleep",
         }
         # List of forbidden attribute accesses
         self.FORBIDDEN_ATTRS = {
@@ -1281,9 +1284,13 @@ class ExpressionInterpreter(ast.NodeVisitor):
         func = self.visit(node.func)
 
         # Check for forbidden function names, etc.
-        if func.__name__ in self.FORBIDDEN_NAMES:
+        if func.__module__ == "builtins":
+            canonical_name = func.__name__
+        else:
+            canonical_name = f"{func.__module__}.{func.__name__}"
+        if canonical_name in self.FORBIDDEN_NAMES:
             raise SecurityError(
-                f"Call to builtin '{func.__name__}' is not allowed"
+                f"Call to builtin '{canonical_name}' is not allowed"
             )
 
         # Evaluate positional arguments
