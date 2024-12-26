@@ -879,6 +879,14 @@ class ExpressionInterpreter(ast.NodeVisitor):
             for stmt in node.orelse:
                 self.visit(stmt)
 
+    def visit_IfExp(self, node: ast.IfExp) -> t.Any:
+        # Ternary expression:  <body> if <test> else <orelse>
+        condition = self.visit(node.test)
+        if condition:
+            return self.visit(node.body)
+        else:
+            return self.visit(node.orelse)
+
     def visit_Pass(
         self, node: ast.Pass  # pylint: disable=unused-argument
     ) -> None:
