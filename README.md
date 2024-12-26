@@ -28,6 +28,7 @@ pip install -r requirements-tests.txt
 ```python
 import monic
 
+
 # Initialize parser and interpreter
 parser = monic.expressions.ExpressionsParser()
 interpreter = monic.expressions.ExpressionsInterpreter()
