@@ -22,6 +22,7 @@ from monic.expressions.exceptions import (
     SecurityError,
     UnsupportedUnpackingError,
 )
+from monic.expressions.registry import registry
 
 
 class ReturnValue(Exception):
@@ -65,6 +66,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         self.scope_stack: t.List[Scope] = [Scope()]  # Track scopes
         self.control: ControlFlow = ControlFlow()
 
+        # Initialize with built-in environment
         self.global_env: t.Dict[str, t.Any] = {
             # Built-in functions
             "print": print,
@@ -110,10 +112,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "RuntimeError": RuntimeError,
             "SecurityError": SecurityError,
             "UnsupportedUnpackingError": UnsupportedUnpackingError,
-            # Modules
-            "datetime": datetime,
-            "time": time,
         }
+
+        # Add registered objects to global environment
+        self.global_env.update(
+            {
+                "datetime": datetime,
+                "time": time,
+            }
+        )
+        self.global_env.update(registry.get_all())
+
         self.local_env: t.Dict[str, t.Any] = {}
 
         # Initialize last result storage

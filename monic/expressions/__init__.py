@@ -11,6 +11,7 @@ from monic.expressions.exceptions import (
 )
 from monic.expressions.interpreter import ExpressionsInterpreter
 from monic.expressions.parser import ExpressionsParser
+from monic.expressions.registry import register, register_module
 
 
 __all__ = [
@@ -21,4 +22,7 @@ __all__ = [
     # Exceptions
     "SecurityError",
     "UnsupportedUnpackingError",
+    # Registry
+    "register",
+    "register_module",
 ]
