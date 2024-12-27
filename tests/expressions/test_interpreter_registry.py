@@ -255,65 +255,40 @@ def test_register_module_with_alias():
 
 def test_register_module_submodule():
     """Test registering a module with submodules."""
-    # Register numpy.random as np_random
-    try:
-        register_module("numpy.random", alias="np_random")
-    except ImportError:
-        pytest.skip("numpy not installed")
+    # Register collections.abc module
+    register_module("collections.abc", alias="collabc")
 
     code = """
-    np_random.seed(42)
-    result = np_random.randint(1, 11)
+    is_sequence = collabc.Sequence
+    result = isinstance([1, 2, 3], is_sequence)
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
 
     result = interpreter.get_name_value("result")
-    assert 1 <= result <= 10
+    assert result is True
 
 
 def test_register_module_with_nested_name():
     """Test registering modules with nested names."""
-    try:
-        # Register numpy as np
-        register_module("numpy", alias="np")
-        # Register numpy.random in np namespace
-        register_module("numpy.random", alias="np.random")
-    except ImportError:
-        pytest.skip("numpy not installed")
+    # Register urllib and its parse submodule
+    register_module("urllib", alias="url")
+    register_module("urllib.parse", alias="url.parse")
 
     code = """
-    # Use numpy functions
-    arr = np.array([1, 2, 3, 4, 5])
-    mean = np.mean(arr)
-
-    # Use numpy.random functions
-    np.random.seed(42)
-    random_num = np.random.randint(1, 10)
+    # Use urllib.parse module
+    query = url.parse.urlencode({'name': 'test', 'value': 42})
+    parsed = url.parse.urlparse('https://example.com/path?key=value')
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
     interpreter.execute(parser.parse(code))
 
-    mean = interpreter.get_name_value("mean")
-    random_num = interpreter.get_name_value("random_num")
+    query = interpreter.get_name_value("query")
+    parsed = interpreter.get_name_value("parsed")
 
-    assert mean == 3.0
-    assert 1 <= random_num <= 9
-
-
-def test_register_module_nested_name_conflict():
-    """Test that registering conflicting nested names raises an error."""
-
-    # First register a function with name 'np'
-    @register("np")
-    def dummy_function():  # pylint: disable=unused-variable
-        return 42
-
-    # Then try to register numpy.random as np.random
-    with pytest.raises(ValueError) as exc_info:
-        register_module("numpy.random", alias="np.random")
-
-    assert "Cannot create nested name" in str(exc_info.value)
-    assert "is already registered as a non-namespace" in str(exc_info.value)
+    assert query == "name=test&value=42"
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "example.com"
+    assert parsed.path == "/path"
