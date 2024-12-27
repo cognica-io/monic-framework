@@ -116,13 +116,24 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         }
 
         # Add registered objects to global environment
+        self.global_env.update(registry.get_all())
+
+        # Add built-in modules
         self.global_env.update(
             {
                 "datetime": datetime,
                 "time": time,
             }
         )
-        self.global_env.update(registry.get_all())
+
+        # Add built-in decorators
+        self.global_env.update(
+            {
+                "classmethod": classmethod,
+                "staticmethod": staticmethod,
+                "property": property,
+            }
+        )
 
         self.local_env: t.Dict[str, t.Any] = {}
 
@@ -571,6 +582,10 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         self._handle_unpacking_target(tgt, val)
             except (TypeError, ValueError) as e:
                 raise UnsupportedUnpackingError(str(e)) from e
+        elif isinstance(target, ast.Attribute):
+            # Handle attribute assignment (e.g., self.name = value)
+            obj = self.visit(target.value)
+            setattr(obj, target.attr, value)
         else:
             raise UnsupportedUnpackingError(
                 f"Unsupported unpacking target type: {type(target).__name__}"
@@ -829,7 +844,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             name = self.visit(item.optional_vars)
                             with_env[name] = value
                             self.current_scope.locals.add(name)
-
                     except Exception as enter_exc:
                         # If __enter__ fails, properly clean up previous context
                         # managers
@@ -1592,6 +1606,60 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 self.visit(stmt)
         return result
 
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        """Handle class definition with support for inheritance and class body.
+
+        Args:
+            node: The ClassDef AST node
+        """
+        # Create a new scope for the class definition
+        class_scope = Scope()
+        self.scope_stack.append(class_scope)
+
+        try:
+            # Evaluate base classes
+            bases = tuple(self.visit(base) for base in node.bases)
+
+            # Create namespace for class attributes
+            namespace: t.Dict[str, t.Any] = {}
+
+            # Save current environment
+            prev_env = self.local_env
+            self.local_env = namespace
+
+            try:
+                # Execute the class body
+                for stmt in node.body:
+                    if isinstance(stmt, ast.FunctionDef):
+                        # Handle function definition
+                        self.visit(stmt)
+
+                        # Get the function from namespace
+                        func = namespace[stmt.name]
+
+                        # Handle decorators in reverse order
+                        for decorator in reversed(stmt.decorator_list):
+                            # Evaluate the decorator
+                            decorator_func = self.visit(decorator)
+                            # Apply the decorator
+                            func = decorator_func(func)
+
+                        # Update the function in namespace
+                        namespace[stmt.name] = func
+                    else:
+                        self.visit(stmt)
+            finally:
+                # Restore the environment
+                self.local_env = prev_env
+
+            # Create the class object
+            class_obj = type(node.name, bases, namespace)
+
+            # Register the class in the current scope
+            self._set_name_value(node.name, class_obj)
+        finally:
+            self.scope_stack.pop()
+
     if sys.version_info >= (3, 10):
 
         def visit_Match(self, node: ast.Match) -> None:
@@ -1672,11 +1740,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     type(value) is type(pattern_value)
                     and value == pattern_value
                 )
-
             elif isinstance(pattern, ast.MatchSingleton):
                 # Singleton pattern: case None: or case True: etc.
                 return value is pattern.value
-
             elif isinstance(pattern, ast.MatchSequence):
                 # Sequence pattern: case [x, y]:
                 if not isinstance(value, (list, tuple)):
@@ -1733,7 +1799,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         self.current_scope.locals.add(star_pattern.name)
 
                     return True
-
             elif isinstance(pattern, ast.MatchMapping):
                 # Mapping pattern: case {"key": value}:
                 if not isinstance(value, dict):
@@ -1762,7 +1827,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     self.current_scope.locals.add(pattern.rest)
 
                 return True
-
             elif isinstance(pattern, ast.MatchStar):
                 # Star pattern: case [x, *rest, y]:
                 # This is handled by MatchSequence
@@ -1770,7 +1834,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     self._set_name_value(pattern.name, value)
                     self.current_scope.locals.add(pattern.name)
                 return True
-
             elif isinstance(pattern, ast.MatchAs):
                 # AS pattern: case x: or case [x] as lst:
                 if pattern.pattern is not None:
@@ -1780,7 +1843,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     self._set_name_value(pattern.name, value)
                     self.current_scope.locals.add(pattern.name)
                 return True
-
             elif isinstance(pattern, ast.MatchOr):
                 # OR pattern: case 1 | 2 | 3:
                 for p in pattern.patterns:
@@ -1794,7 +1856,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     finally:
                         self.scope_stack.pop()
                 return False
-
             elif isinstance(pattern, ast.MatchClass):
                 # Class pattern: case Point(x, y):
                 cls = self.visit(pattern.cls)
