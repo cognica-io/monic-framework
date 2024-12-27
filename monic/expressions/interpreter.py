@@ -1703,7 +1703,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                                 if not guard_result:
                                     continue
 
-                            # Copy matched variables from temp scope to match scope
+                            # Copy matched variables from temp scope to match
+                            # scope
                             for name in temp_scope.locals:
                                 if name in self.local_env:
                                     self._set_name_value(
