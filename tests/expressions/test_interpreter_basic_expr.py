@@ -137,6 +137,20 @@ def test_list_unpacking():
     assert interpreter.local_env["a"] == 1
     assert interpreter.local_env["rest"] == [2, 3, 4]
 
+    # Starred unpacking with multiple variables
+    tree = parser.parse("first, *middle, last = [1, 2, 3, 4, 5]")
+    interpreter.execute(tree)
+    assert interpreter.local_env["first"] == 1
+    assert interpreter.local_env["middle"] == [2, 3, 4]
+    assert interpreter.local_env["last"] == 5
+
+    # Starred unpacking with empty middle
+    tree = parser.parse("first, *middle, last = [1, 2]")
+    interpreter.execute(tree)
+    assert interpreter.local_env["first"] == 1
+    assert interpreter.local_env["middle"] == []
+    assert interpreter.local_env["last"] == 2
+
 
 def test_error_handling():
     """Test error handling mechanisms"""
