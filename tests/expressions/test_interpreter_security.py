@@ -22,7 +22,7 @@ def test_security_checks():
     forbidden_funcs = ["eval", "exec", "compile", "__import__"]
     for func in forbidden_funcs:
         with pytest.raises(
-            SecurityError, match=f"Use of '{func}' is not allowed"
+            SecurityError, match=f"Call to builtin '{func}' is not allowed"
         ):
             tree = parser.parse(f"{func}('print(1)')")
             interpreter.execute(tree)
