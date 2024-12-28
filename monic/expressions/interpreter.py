@@ -7,7 +7,7 @@
 # pylint: disable=no-else-break,no-else-return,no-else-raise,broad-except
 # pylint: disable=too-many-branches,too-many-return-statements,too-many-locals
 # pylint: disable=too-many-public-methods,too-many-instance-attributes
-# pylint: disable=too-many-statements,too-many-nested-blocks
+# pylint: disable=too-many-statements,too-many-nested-blocks,too-many-lines
 
 import ast
 import datetime
@@ -327,20 +327,27 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
     def _get_name_value(self, name: str) -> t.Any:
         """Get value of a name considering scope declarations."""
-        if name in self.current_scope.globals:
+        # Fast path for common case
+        if name in self.local_env:
+            return self.local_env[name]
+
+        # Check current scope declarations
+        current = self.current_scope
+        if name in current.globals:
             if name in self.global_env:
                 return self.global_env[name]
             raise NameError(f"Global name '{name}' is not defined")
-        elif name in self.current_scope.nonlocals:
-            # Search for name in outer scopes
+
+        if name in current.nonlocals:
+            # Use reversed list slice for faster iteration
             for scope in reversed(self.scope_stack[:-1]):
                 if name in scope.locals:
                     return self.local_env[name]
             raise NameError(f"Nonlocal name '{name}' is not defined")
-        elif name in self.local_env:
-            return self.local_env[name]
-        elif name in self.global_env:
+
+        if name in self.global_env:
             return self.global_env[name]
+
         raise NameError(f"Name '{name}' is not defined")
 
     def _set_name_value(self, name: str, value: t.Any) -> None:
