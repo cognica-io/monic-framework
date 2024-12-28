@@ -711,39 +711,32 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         except (ZeroDivisionError, TypeError, ValueError) as e:
             raise type(e)(str(e)) from e
 
+    _COMPARE_OP_MAP: t.Dict[t.Type[ast.cmpop], t.Callable] = {
+        ast.Eq: operator.eq,
+        ast.NotEq: operator.ne,
+        ast.Lt: operator.lt,
+        ast.LtE: operator.le,
+        ast.Gt: operator.gt,
+        ast.GtE: operator.ge,
+        ast.In: lambda x, y: x in y,
+        ast.NotIn: lambda x, y: x not in y,
+        ast.Is: operator.is_,
+        ast.IsNot: operator.is_not,
+    }
+
     def visit_Compare(self, node: ast.Compare) -> bool:
         try:
             left = self.visit(node.left)
 
             for op, comparator in zip(node.ops, node.comparators):
                 right = self.visit(comparator)
-
-                if isinstance(op, ast.Eq):
-                    result = left == right
-                elif isinstance(op, ast.NotEq):
-                    result = left != right
-                elif isinstance(op, ast.Lt):
-                    result = left < right
-                elif isinstance(op, ast.LtE):
-                    result = left <= right
-                elif isinstance(op, ast.Gt):
-                    result = left > right
-                elif isinstance(op, ast.GtE):
-                    result = left >= right
-                elif isinstance(op, ast.In):
-                    result = left in right
-                elif isinstance(op, ast.NotIn):
-                    result = left not in right
-                elif isinstance(op, ast.Is):
-                    result = left is right
-                elif isinstance(op, ast.IsNot):
-                    result = left is not right
-                else:
+                op_func = self._COMPARE_OP_MAP.get(type(op))
+                if op_func is None:
                     raise NotImplementedError(
                         f"Unsupported comparison operator: {type(op).__name__}"
                     )
 
-                if not result:
+                if not op_func(left, right):
                     return False
                 left = right
 
