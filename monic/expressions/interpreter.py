@@ -8,6 +8,7 @@
 # pylint: disable=too-many-branches,too-many-return-statements,too-many-locals
 # pylint: disable=too-many-public-methods,too-many-instance-attributes
 # pylint: disable=too-many-statements,too-many-nested-blocks,too-many-lines
+# pylint: disable=unnecessary-dunder-call
 
 import ast
 import datetime
@@ -294,32 +295,27 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         Handle 'nonlocal' statements, e.g.:
             nonlocal x, y
 
-        We allow the situation where 'x' or 'y' doesn't yet exist in the parent
-        scope, by pre-declaring them in that parent's 'locals' set. This helps
-        pass tests like 'counter()' with a nested increment() that references
-        'count'.
+        In Python, if a variable is declared 'nonlocal', it must exist in
+        at least one enclosing (function) scope. If not found, raise
+        SyntaxError as in the standard Python behavior.
         """
         for name in node.names:
+            # Mark this name as nonlocal in the current scope
             self.current_scope.nonlocals.add(name)
 
             found = False
-            # Walk from the next outer scope up
+            # Check all outer scopes (excluding the current scope)
             for scope in reversed(self.scope_stack[:-1]):
-                # If already local or nonlocal, we found it
+                # If already local or already marked nonlocal there, consider
+                # it found
                 if (name in scope.locals) or (name in scope.nonlocals):
-                    found = True
-                    break
-                else:
-                    # Otherwise, pre-declare it so the parent scope can hold it
-                    scope.locals.add(name)
                     found = True
                     break
 
             if not found:
-                # If we can't find or create it in any outer scope
+                # If it's not in any enclosing scope, Python raises SyntaxError
                 raise SyntaxError(
-                    f"No binding for nonlocal '{name}' found or created in "
-                    "outer scopes"
+                    f"No binding for nonlocal '{name}' found in outer scopes"
                 )
 
     def visit_Constant(self, node: ast.Constant) -> t.Any:
@@ -432,6 +428,15 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         if isinstance(node.ctx, ast.Store):
             return node.id
         elif isinstance(node.ctx, ast.Load):
+            # If the name is declared global or nonlocal in the current scope,
+            # skip the registry fallback entirely so we preserve the correct
+            # error.
+            if (
+                node.id in self.current_scope.globals
+                or node.id in self.current_scope.nonlocals
+            ):
+                return self._get_name_value(node.id)
+
             try:
                 return self._get_name_value(node.id)
             except NameError:
@@ -854,9 +859,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
                     try:
                         # Enter the context manager
-                        value = (
-                            context_manager.__enter__()  # pylint: disable=unnecessary-dunder-call
-                        )
+                        value = context_manager.__enter__()
                         context_managers.append((context_manager, value))
 
                         # Handle the optional 'as' variable if present
@@ -1617,21 +1620,45 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
             # If not in global environment, bind it to the instance
             def bound_method(*args, **kwargs):
-                # Set up the environment for the method call
                 prev_env = self.local_env
-                self.local_env = {**prev_env, "self": value}
+
                 try:
-                    # Pass self as the first argument
-                    return attr(value, *args, **kwargs)
+                    # Check if this is a static method - either by flag or by
+                    # type
+                    has_static_flag = getattr(
+                        type(value), f"__static_{node.attr}", False
+                    )
+                    is_static_method = isinstance(attr, staticmethod)
+
+                    # Check if the method is a function
+                    is_function = isinstance(attr, types.FunctionType)
+
+                    if has_static_flag or is_static_method:
+                        # For static methods, don't bind to instance
+                        self.local_env = prev_env
+                        if is_static_method:
+                            method = attr.__get__(None, type(value))
+                            return method(*args, **kwargs)
+                        return attr(*args, **kwargs)
+                    elif isinstance(attr, classmethod):
+                        self.local_env = prev_env
+                        method = attr.__get__(type(value), type(value))
+                        return method(*args, **kwargs)
+                    elif is_function:
+                        # If it's a function, call it directly
+                        self.local_env = prev_env
+                        return attr(*args, **kwargs)
+                    else:
+                        self.local_env = prev_env
+                        method = attr.__get__(value, type(value))
+                        return method(*args, **kwargs)
                 finally:
                     self.local_env = prev_env
 
             return bound_method
         elif isinstance(attr, (classmethod, staticmethod, property)):
             # For decorated methods, get the underlying function
-            func = attr.__get__(  # pylint: disable=unnecessary-dunder-call
-                value, type(value)
-            )
+            func = attr.__get__(value, type(value))
             if isinstance(attr, (classmethod, property)):
                 # For classmethod and property, we need to set up the
                 # environment
@@ -1808,7 +1835,35 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 for i, base in enumerate(mro):
                     if base is cls:
                         if i + 1 < len(mro):
-                            return mro[i + 1]
+                            next_class = mro[i + 1]
+
+                            # Create a bound method that will bind self to the
+                            # method
+                            def bound_super_method(
+                                name, current_class=next_class
+                            ):
+                                method = getattr(current_class, name)
+                                if isinstance(
+                                    method, (staticmethod, classmethod)
+                                ):
+                                    return method.__get__(
+                                        obj_or_type, current_class
+                                    )
+                                else:
+                                    return method.__get__(
+                                        obj_or_type, current_class
+                                    )
+
+                            # Create a new class with a __getattr__ method that
+                            # will bind self to the method
+                            params = {
+                                "__getattr__": (
+                                    lambda _, name, method=bound_super_method: (
+                                        method(name)
+                                    )
+                                )
+                            }
+                            return type("Super", (), params)()
                         break
                 raise RuntimeError("super(): bad __mro__")
 
