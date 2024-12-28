@@ -139,14 +139,14 @@ def test_register_nested_name_conflict():
 
     @register("math.functions.add")
     def add1(x, y):  # pylint: disable=unused-variable
-        return x + y
+        return x + y  # pragma: no cover
 
     # Try to register another function with the same nested name
     with pytest.raises(ValueError) as exc_info:
 
         @register("math.functions.add")
         def add2(x, y):  # pylint: disable=unused-variable
-            return x + y
+            return x + y  # pragma: no cover
 
     assert "is already registered in namespace" in str(exc_info.value)
 
@@ -156,14 +156,14 @@ def test_register_nested_name_non_namespace_conflict():
 
     @register("math")
     def math_func():  # pylint: disable=unused-variable
-        return 42
+        return 42  # pragma: no cover
 
     # Try to register a function in math.functions namespace
     with pytest.raises(ValueError) as exc_info:
 
         @register("math.functions.add")
         def add(x, y):  # pylint: disable=unused-variable
-            return x + y
+            return x + y  # pragma: no cover
 
     assert "is already registered as a non-namespace" in str(exc_info.value)
 
