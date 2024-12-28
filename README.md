@@ -90,6 +90,7 @@ pip install -r requirements-tests.txt
 ```python
 from monic.expressions import ExpressionsParser, ExpressionsInterpreter
 
+
 # Initialize parser and interpreter
 parser = ExpressionsParser()
 interpreter = ExpressionsInterpreter()
@@ -118,6 +119,9 @@ print(result)  # Output: "y is greater"
 ### Function Definition and Calls
 
 ```python
+from monic.expressions import ExpressionsParser, ExpressionsInterpreter
+
+
 code = """
 def calculate_sum(a, b):
     return a + b
@@ -143,7 +147,8 @@ print(result)  # Output: [30, 3.0]
 ### Timeout Control
 
 ```python
-from monic.expressions import ExpressionsParser, ExpressionsInterpreter, ExpressionsContext
+from monic.expressions import ExpressionsParser, ExpressionsContext, ExpressionsInterpreter
+
 
 parser = ExpressionsParser()
 # Initialize with timeout context
