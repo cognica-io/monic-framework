@@ -152,7 +152,7 @@ from monic.expressions import ExpressionsParser, ExpressionsContext, Expressions
 
 parser = ExpressionsParser()
 # Initialize with timeout context
-context = ExpressionsContext(timeout_seconds=5)  # Set 5 seconds timeout
+context = ExpressionsContext(timeout=5.0)  # Set 5 seconds timeout
 interpreter = ExpressionsInterpreter(context=context)
 
 # This will be terminated after 5 seconds
