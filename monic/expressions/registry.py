@@ -5,9 +5,8 @@
 #
 
 import importlib
+import types
 import typing as t
-
-from types import ModuleType
 
 
 class NamespaceProxy:
@@ -35,7 +34,7 @@ class Registry:
     def reset(self) -> None:
         """Reset the registry to its initial state."""
         self._objects: t.Dict[str, t.Any] = {}
-        self._modules: t.Dict[str, ModuleType] = {}
+        self._modules: t.Dict[str, types.ModuleType] = {}
 
     def _register_in_namespace(
         self,
@@ -84,28 +83,19 @@ class Registry:
     def register(
         self, name_or_func: t.Optional[t.Union[str, t.Callable]] = None
     ) -> t.Union[t.Callable[[t.Any], t.Any], t.Any]:
-        """Register an object or function in the registry.
+        """Register an object with a given name.
 
         This decorator can be used in two ways:
             1. With parentheses: @register() or @register("custom.name")
             2. Without parentheses: @register
 
-        The name can include dots for nested namespaces, e.g.:
-            @register("math.functions.add")
-            def my_add(x, y):
-                return x + y
-
         Args:
             name_or_func: Either a string name to register under (can include
-                         dots for nesting), or the function itself when used
-                         as @register without parentheses.
+                          dots for nesting), or the function itself when used
+                          as @register without parentheses.
 
         Returns:
             Either a decorator function or the decorated object itself.
-
-        Raises:
-            ValueError: If there's a naming conflict or if the object has no
-                       name and none is provided.
         """
         # Case 1: @register (no parentheses)
         if callable(name_or_func):
@@ -114,10 +104,7 @@ class Registry:
                 raise ValueError(
                     "Object has no __name__ attribute and no name was provided"
                 )
-            self._register_in_namespace(
-                register_name, name_or_func, self._objects
-            )
-            return name_or_func
+            return self._register_object(register_name, name_or_func)
 
         # Case 2: @register() or @register("custom.name")
         def decorator(obj: t.Any) -> t.Any:
@@ -126,15 +113,77 @@ class Registry:
                 raise ValueError(
                     "No name provided and object has no __name__ attribute"
                 )
-
-            self._register_in_namespace(register_name, obj, self._objects)
-            return obj
+            return self._register_object(register_name, obj)
 
         return decorator
 
+    def is_registered(self, name_or_obj: t.Union[str, t.Any]) -> bool:
+        """Check if an object is registered.
+
+        Args:
+            name_or_obj: The name or object to check
+
+        Returns:
+            True if the object is registered, False otherwise
+        """
+        if isinstance(name_or_obj, str):
+            try:
+                obj = self.get(name_or_obj)
+            except KeyError:
+                return False
+        else:
+            obj = name_or_obj
+
+        if isinstance(obj, types.FunctionType):
+            return hasattr(obj, "__is_expressions_type__")
+
+        return True
+
+    def _register_object(self, name: str, obj: t.Any) -> t.Any:
+        """Register an object with a given name.
+
+        Args:
+            name: The name to register the object under
+            obj: The object to register
+
+        Returns:
+            The registered object
+
+        Raises:
+            ValueError: If there's a naming conflict
+        """
+        # Split the name into parts
+        parts = name.split(".")
+
+        # Start with the root registry
+        current = self._objects
+
+        # Create nested dictionaries for each part except the last
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            elif not isinstance(current[part], dict):
+                raise ValueError(
+                    f"'{part}' is already registered as a non-namespace"
+                )
+            current = current[part]
+
+        # Check for conflicts
+        if parts[-1] in current:
+            raise ValueError(f"'{name}' is already registered in namespace")
+
+        # Store the object in the registry
+        current[parts[-1]] = obj
+
+        # Mark functions as registered
+        if isinstance(obj, types.FunctionType):
+            setattr(obj, "__is_expressions_type__", True)
+
+        return obj
+
     def register_module(
         self, module_name: str, alias: t.Optional[str] = None
-    ) -> ModuleType:
+    ) -> types.ModuleType:
         """Register a Python module in the registry.
 
         Args:
@@ -189,6 +238,32 @@ class Registry:
                 result[name] = value
         result.update(self._modules)
         return result
+
+    def get(self, name: str) -> t.Any:
+        """Get an object from the registry.
+
+        Args:
+            name: The name to get the object for
+
+        Returns:
+            The registered object
+
+        Raises:
+            KeyError: If the name is not found in the registry
+        """
+        # Split the name into parts
+        parts = name.split(".")
+
+        # Start with the root registry
+        current = self._objects
+
+        # Traverse the registry
+        for part in parts:
+            if part not in current:
+                raise KeyError(f"Name '{name}' is not defined")
+            current = current[part]
+
+        return current
 
 
 # Global registry instance

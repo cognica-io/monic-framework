@@ -14,6 +14,7 @@ import datetime
 import operator
 import sys
 import time
+import types
 import typing as t
 
 from dataclasses import dataclass, field
@@ -61,6 +62,11 @@ class ControlFlow:
 
 class ExpressionsInterpreter(ast.NodeVisitor):
     def __init__(self, context: t.Optional[ExpressionsContext] = None) -> None:
+        """Initialize the interpreter.
+
+        Args:
+            context: Optional context for execution
+        """
         self.started_at = time.monotonic()
 
         self.context = context or ExpressionsContext()
@@ -221,8 +227,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 )
 
         # Get the visitor method for this node type
-        method = "visit_" + node.__class__.__name__
-        visitor = getattr(self, method, self.generic_visit)
+        visitor = getattr(
+            self, f"visit_{type(node).__name__}", self.generic_visit
+        )
         return visitor(node)
 
     def generic_visit(self, node: ast.AST) -> None:
@@ -247,16 +254,23 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         for op in ast.walk(node):
             # Check for forbidden function calls
             if isinstance(op, ast.Name) and op.id in self.FORBIDDEN_NAMES:
-                raise SecurityError(f"Use of '{op.id}' is not allowed")
+                raise SecurityError(f"Call to builtin '{op.id}' is not allowed")
 
             # Check for forbidden attribute access
-            if (
-                isinstance(op, ast.Attribute)
-                and op.attr in self.FORBIDDEN_ATTRS
-            ):
-                raise SecurityError(
-                    f"Access to '{op.attr}' attribute is not allowed"
-                )
+            if isinstance(op, ast.Attribute):
+                # Check for direct forbidden attribute access
+                if op.attr in self.FORBIDDEN_ATTRS:
+                    raise SecurityError(
+                        f"Access to '{op.attr}' attribute is not allowed"
+                    )
+
+                # Check for forbidden function calls like time.sleep
+                if isinstance(op.value, ast.Name):
+                    full_name = f"{op.value.id}.{op.attr}"
+                    if full_name in self.FORBIDDEN_NAMES:
+                        raise SecurityError(
+                            f"Call to '{full_name}' is not allowed"
+                        )
 
             # Check for __builtins__ access
             if isinstance(op, ast.Name) and op.id == "__builtins__":
@@ -364,7 +378,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 del self.global_env[name]
             else:
                 raise NameError(f"Global name '{name}' is not defined")
-
         elif name in self.current_scope.nonlocals:
             # Search for name in outer scopes
             found = False
@@ -377,7 +390,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     break
             if not found:
                 raise NameError(f"Nonlocal name '{name}' is not defined")
-
         else:
             # Try to delete from current scope
             if name in self.current_scope.locals:
@@ -413,7 +425,14 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         if isinstance(node.ctx, ast.Store):
             return node.id
         elif isinstance(node.ctx, ast.Load):
-            return self._get_name_value(node.id)
+            try:
+                return self._get_name_value(node.id)
+            except NameError:
+                # If not found in current scope, try the registry
+                try:
+                    return registry.get(node.id)
+                except KeyError as e:
+                    raise NameError(f"Name '{node.id}' is not defined") from e
         elif isinstance(node.ctx, ast.Del):
             self._del_name_value(node.id)
         else:
@@ -500,6 +519,10 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         if isinstance(target, ast.Name):
             # Simple name assignment with scope handling
             self._set_name_value(target.id, value)
+        elif isinstance(target, ast.Attribute):
+            # Handle attribute assignment (e.g., self.x = value)
+            obj = self.visit(target.value)
+            setattr(obj, target.attr, value)
         elif isinstance(target, (ast.Tuple, ast.List)):
             # Tuple or list unpacking
             try:
@@ -574,18 +597,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             )
                 else:
                     # Standard unpacking without starred expression
-                    if len(list(value)) != len(target.elts):
+                    value_list = list(value)
+                    if len(value_list) < len(target.elts):
                         raise ValueError("Not enough values to unpack")
+                    elif len(value_list) > len(target.elts):
+                        raise ValueError("Too many values to unpack")
 
                     # Unpack each element
                     for tgt, val in zip(target.elts, value):
                         self._handle_unpacking_target(tgt, val)
             except (TypeError, ValueError) as e:
                 raise UnsupportedUnpackingError(str(e)) from e
-        elif isinstance(target, ast.Attribute):
-            # Handle attribute assignment (e.g., self.name = value)
-            obj = self.visit(target.value)
-            setattr(obj, target.attr, value)
         else:
             raise UnsupportedUnpackingError(
                 f"Unsupported unpacking target type: {type(target).__name__}"
@@ -1312,23 +1334,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         """
         # Evaluate the function object
         func = self.visit(node.func)
-
-        # Check for forbidden function names, etc.
-        if func.__module__ == "builtins":
-            canonical_name = func.__name__
-        else:
-            canonical_name = f"{func.__module__}.{func.__name__}"
-        if canonical_name in self.FORBIDDEN_NAMES:
-            raise SecurityError(
-                f"Call to builtin '{canonical_name}' is not allowed"
-            )
-
-        # Evaluate positional arguments
         pos_args = [self.visit(arg) for arg in node.args]
 
         # Evaluate keyword arguments
-        #  - node.keywords might contain both normal keywords (kw.arg != None)
-        #    and **kwargs expansions (kw.arg == None).
         kwargs = {}
         for kw in node.keywords:
             if kw.arg is None:
@@ -1341,6 +1349,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     )
                 # Merge into our kwargs
                 for k, v in dict_val.items():
+                    if not isinstance(k, str):
+                        raise TypeError("Keywords must be strings")
                     kwargs[k] = v
             else:
                 # Normal keyword argument f(key=value)
@@ -1348,7 +1358,19 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 value = self.visit(kw.value)
                 kwargs[key_name] = value
 
-        # Actually call the function object
+        # Check if the function is callable
+        if not callable(func):
+            raise TypeError(f"'{type(func).__name__}' object is not callable")
+
+        # Handle registered functions
+        if registry.is_registered(func):
+            return func(*pos_args, **kwargs)
+
+        # Handle bound methods
+        if isinstance(func, types.MethodType):
+            return func(*pos_args, **kwargs)
+
+        # Handle normal functions
         return func(*pos_args, **kwargs)
 
     def visit_List(self, node: ast.List) -> list:
@@ -1533,13 +1555,100 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             ) from e
 
     def visit_Attribute(self, node: ast.Attribute) -> t.Any:
+        """Visit an attribute access node.
+
+        Args:
+            node: The Attribute AST node
+
+        Returns:
+            The value of the attribute
+
+        Raises:
+            SecurityError: If accessing a forbidden attribute
+            AttributeError: If the attribute doesn't exist
+        """
         if node.attr in self.FORBIDDEN_ATTRS:
             raise SecurityError(
                 f"Access to '{node.attr}' attribute is not allowed"
             )
 
         value = self.visit(node.value)
-        return getattr(value, node.attr)
+
+        # Handle normal attribute access
+        try:
+            attr = getattr(value, node.attr)
+        except AttributeError as e:
+            raise AttributeError(
+                f"'{type(value).__name__}' object has no attribute "
+                f"'{node.attr}'"
+            ) from e
+
+        # If this is a function defined in our namespace, bind it to the
+        # instance
+        if isinstance(attr, types.FunctionType):
+            # Check if this is a registered function
+            if registry.is_registered(attr):
+                return attr
+
+            # Check if this is a static method
+            if isinstance(value, type):
+                # If accessed on class, check for static marker
+                if getattr(value, f"__static_{node.attr}", False):
+                    return attr
+            else:
+                # If accessed on instance, check the class
+                if getattr(type(value), f"__static_{node.attr}", False):
+                    return attr
+
+            # If not a static method, check if it's a module function
+            if isinstance(value, types.ModuleType):
+                # For module functions, don't bind self
+                return attr
+
+            # Check if the function is in the global environment
+            for global_value in self.global_env.values():
+                if isinstance(global_value, dict):
+                    # Check nested dictionaries
+                    for nested_value in global_value.values():
+                        if attr is nested_value:
+                            return attr
+                elif attr is global_value:
+                    return attr
+
+            # If not in global environment, bind it to the instance
+            def bound_method(*args, **kwargs):
+                # Set up the environment for the method call
+                prev_env = self.local_env
+                self.local_env = {**prev_env, "self": value}
+                try:
+                    # Pass self as the first argument
+                    return attr(value, *args, **kwargs)
+                finally:
+                    self.local_env = prev_env
+
+            return bound_method
+        elif isinstance(attr, (classmethod, staticmethod, property)):
+            # For decorated methods, get the underlying function
+            func = attr.__get__(  # pylint: disable=unnecessary-dunder-call
+                value, type(value)
+            )
+            if isinstance(attr, (classmethod, property)):
+                # For classmethod and property, we need to set up the
+                # environment
+                def decorated_method(*args, **kwargs):
+                    prev_env = self.local_env
+                    self.local_env = {**prev_env, "self": value}
+                    try:
+                        return func(*args, **kwargs)
+                    finally:
+                        self.local_env = prev_env
+
+                return decorated_method
+            else:
+                # For staticmethod, just return the function as is
+                return func
+
+        return attr
 
     def visit_Subscript(self, node: ast.Subscript) -> t.Any:
         """Handle subscript operations with improved slice support.
@@ -1588,6 +1697,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 raise TypeError(
                     f"Invalid subscript type: {type(slice_val).__name__}"
                 ) from e
+
+    def visit_Expr(self, node: ast.Expr) -> t.Any:
+        """Visit an expression statement.
+
+        Args:
+            node: The Expr AST node
+
+        Returns:
+            The value of the expression
+        """
+        return self.visit(node.value)
 
     def visit_Expression(self, node: ast.Expression) -> t.Any:
         result = self.visit(node.body)
@@ -1644,6 +1764,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             # Apply the decorator
                             func = decorator_func(func)
 
+                            # For static methods, we need to store both the
+                            # decorator and the function
+                            if decorator_func is staticmethod:
+                                namespace[f"__static_{stmt.name}"] = True
+
                         # Update the function in namespace
                         namespace[stmt.name] = func
                     else:
@@ -1652,8 +1777,51 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 # Restore the environment
                 self.local_env = prev_env
 
+            # Create a custom super implementation for this class
+            def custom_super(cls=None, obj_or_type=None):
+                if cls is None and obj_or_type is None:
+                    # Handle zero-argument super() by finding the calling class
+                    # and instance from the current scope
+                    if "self" in self.local_env:
+                        obj_or_type = self.local_env["self"]
+                        cls = class_obj
+                    else:
+                        raise RuntimeError(
+                            "super(): no arguments and no context - unable to "
+                            "determine class and instance"
+                        )
+                elif cls is None:
+                    # Handle one-argument super()
+                    if obj_or_type is None:
+                        raise TypeError("super() argument 1 cannot be None")
+                    cls = type(obj_or_type)
+
+                if obj_or_type is None:
+                    raise TypeError("super() argument 2 cannot be None")
+
+                # Find the next class in the MRO after cls
+                mro = (
+                    obj_or_type.__class__.__mro__
+                    if isinstance(obj_or_type, object)
+                    else obj_or_type.__mro__
+                )
+                for i, base in enumerate(mro):
+                    if base is cls:
+                        if i + 1 < len(mro):
+                            return mro[i + 1]
+                        break
+                raise RuntimeError("super(): bad __mro__")
+
+            # Add custom super to the class namespace
+            namespace["super"] = custom_super
+
+            # Set the module name for the class
+            namespace["__module__"] = "monic.expressions.registry"
+
             # Create the class object
-            class_obj = type(node.name, bases, namespace)
+            class_obj = types.new_class(
+                node.name, bases, {}, lambda ns: ns.update(namespace)
+            )
 
             # Register the class in the current scope
             self._set_name_value(node.name, class_obj)
