@@ -548,6 +548,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             # Handle attribute assignment (e.g., self.x = value)
             obj = self.visit(target.value)
             setattr(obj, target.attr, value)
+        elif isinstance(target, ast.Subscript):
+            # Handle subscript assignment (e.g., lst[0] = value)
+            container = self.visit(target.value)
+            index = self.visit(target.slice)
+            container[index] = value
         elif isinstance(target, (ast.Tuple, ast.List)):
             # Tuple or list unpacking
             try:
