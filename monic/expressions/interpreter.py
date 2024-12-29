@@ -1651,10 +1651,16 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         try:
             attr = getattr(value, node.attr)
         except AttributeError as e:
-            raise AttributeError(
-                f"'{type(value).__name__}' object has no attribute "
-                f"'{node.attr}'"
-            ) from e
+            if isinstance(value, type):
+                raise AttributeError(
+                    f"type object '{value.__name__}' has no attribute "
+                    f"'{node.attr}'"
+                ) from e
+            else:
+                raise AttributeError(
+                    f"'{type(value).__name__}' object has no attribute "
+                    f"'{node.attr}'"
+                ) from e
 
         # If this is a function defined in our namespace, bind it to the
         # instance
