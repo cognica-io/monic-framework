@@ -50,10 +50,21 @@ class Registry:
             namespace: The namespace dictionary to register in.
 
         Raises:
-            ValueError: If there's a naming conflict.
+            ValueError: If there's a naming conflict or if the name is empty.
+            TypeError: If the name is not a string.
         """
+        if not isinstance(name, str):
+            raise TypeError("Name must be a string")
+
+        if not name:
+            raise ValueError("Name cannot be empty")
+
         if "." in name:
             parts = name.split(".")
+            # Check for empty parts
+            if any(not part for part in parts):
+                raise ValueError("Name cannot contain empty parts")
+
             current_dict = namespace
 
             # Create or traverse the namespace hierarchy
