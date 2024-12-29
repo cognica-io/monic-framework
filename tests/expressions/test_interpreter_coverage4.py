@@ -949,9 +949,16 @@ def test_function_definition_errors():
     with pytest.raises(SyntaxError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert (
-        "parameter without a default follows parameter with a default"
-        in str(exc_info.value)
+    # Python's error message for non-default argument after default argument varies by version:
+    # - Python <= 3.10: "parameter without a default follows parameter with a default"
+    # - Python >= 3.11: "non-default argument follows default argument"
+    error_msg = str(exc_info.value)
+    assert any(
+        msg in error_msg
+        for msg in [
+            "parameter without a default follows parameter with a default",
+            "non-default argument follows default argument",
+        ]
     )
 
     # Test invalid parameter order
