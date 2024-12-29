@@ -534,9 +534,153 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             target = node.targets[0]
             self._handle_unpacking_target(target, value)
 
-    def _handle_unpacking_target(self, target: ast.AST, value: t.Any) -> None:
+    def _handle_name_target(self, target: ast.Name, value: t.Any) -> None:
+        """Handle simple name assignment with scope handling.
+
+        Args:
+            target: Name AST node
+            value: Value to assign
         """
-        Handle different types of unpacking targets.
+        self._set_name_value(target.id, value)
+
+    def _handle_attribute_target(
+        self, target: ast.Attribute, value: t.Any
+    ) -> None:
+        """Handle attribute assignment (e.g., self.x = value).
+
+        Args:
+            target: Attribute AST node
+            value: Value to assign
+        """
+        obj = self.visit(target.value)
+        setattr(obj, target.attr, value)
+
+    def _handle_subscript_target(
+        self, target: ast.Subscript, value: t.Any
+    ) -> None:
+        """Handle subscript assignment (e.g., lst[0] = value).
+
+        Args:
+            target: Subscript AST node
+            value: Value to assign
+        """
+        container = self.visit(target.value)
+        index = self.visit(target.slice)
+        container[index] = value
+
+    def _handle_starred_unpacking(
+        self,
+        target_elts: list[ast.expr],
+        value: t.Any,
+        star_index: int,
+        starred_target: ast.Starred,
+    ) -> None:
+        """Handle starred unpacking in sequence assignments.
+
+        Args:
+            target_elts: List of target elements
+            value: Value being unpacked
+            star_index: Index of the starred expression
+            starred_target: The starred target node
+
+        Raises:
+            ValueError: If there are not enough values to unpack
+            UnsupportedUnpackingError: If unpacking pattern is not supported
+        """
+        iter_value = iter(value)
+
+        # Handle elements before the starred expression
+        before_elements = target_elts[:star_index]
+        for tgt in before_elements:
+            try:
+                self._handle_unpacking_target(tgt, next(iter_value))
+            except StopIteration as e:
+                raise ValueError("Not enough values to unpack") from e
+
+        # Collect remaining elements for the starred target
+        starred_values = list(iter_value)
+
+        # Calculate how many elements should be in the starred part
+        after_star_count = len(target_elts) - star_index - 1
+
+        # If there are more elements after the starred part
+        if after_star_count > 0:
+            # Make sure there are enough elements
+            if len(starred_values) < after_star_count:
+                raise ValueError("Not enough values to unpack")
+
+            # Separate starred values
+            starred_list = starred_values[:-after_star_count]
+            after_star_values = starred_values[-after_star_count:]
+
+            # Assign starred target
+            if isinstance(starred_target.value, ast.Name):
+                self._set_name_value(starred_target.value.id, starred_list)
+
+            # Assign elements after starred
+            after_elements = target_elts[star_index + 1 :]
+            for tgt, val in zip(after_elements, after_star_values):
+                self._handle_unpacking_target(tgt, val)
+        else:
+            # If no elements after starred, just assign the rest
+            # to the starred target
+            if isinstance(starred_target.value, ast.Name):
+                self._set_name_value(starred_target.value.id, starred_values)
+
+    def _handle_sequence_unpacking(
+        self,
+        target: ast.Tuple | ast.List,
+        value: t.Any,
+    ) -> None:
+        """Handle sequence (tuple/list) unpacking.
+
+        Args:
+            target: Tuple or List AST node
+            value: Value to unpack
+
+        Raises:
+            ValueError: If value cannot be unpacked
+            UnsupportedUnpackingError: If unpacking pattern is not supported
+        """
+        try:
+            if not hasattr(value, "__iter__"):
+                raise ValueError("Cannot unpack non-iterable value")
+
+            # Check for starred expressions (extended unpacking)
+            starred_indices = [
+                i
+                for i, elt in enumerate(target.elts)
+                if isinstance(elt, ast.Starred)
+            ]
+
+            if len(starred_indices) > 1:
+                raise UnsupportedUnpackingError(
+                    "Cannot use multiple starred expressions in assignment"
+                )
+
+            if starred_indices:
+                # Handle starred unpacking
+                star_index = starred_indices[0]
+                starred_target = t.cast(ast.Starred, target.elts[star_index])
+                self._handle_starred_unpacking(
+                    target.elts, value, star_index, starred_target
+                )
+            else:
+                # Standard unpacking without starred expression
+                value_list = list(value)
+                if len(value_list) < len(target.elts):
+                    raise ValueError("Not enough values to unpack")
+                elif len(value_list) > len(target.elts):
+                    raise ValueError("Too many values to unpack")
+
+                # Unpack each element
+                for tgt, val in zip(target.elts, value):
+                    self._handle_unpacking_target(tgt, val)
+        except (TypeError, ValueError) as e:
+            raise UnsupportedUnpackingError(str(e)) from e
+
+    def _handle_unpacking_target(self, target: ast.AST, value: t.Any) -> None:
+        """Handle different types of unpacking targets.
 
         Args:
             target: AST node representing the unpacking target
@@ -547,102 +691,13 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             encountered
         """
         if isinstance(target, ast.Name):
-            # Simple name assignment with scope handling
-            self._set_name_value(target.id, value)
+            self._handle_name_target(target, value)
         elif isinstance(target, ast.Attribute):
-            # Handle attribute assignment (e.g., self.x = value)
-            obj = self.visit(target.value)
-            setattr(obj, target.attr, value)
+            self._handle_attribute_target(target, value)
         elif isinstance(target, ast.Subscript):
-            # Handle subscript assignment (e.g., lst[0] = value)
-            container = self.visit(target.value)
-            index = self.visit(target.slice)
-            container[index] = value
+            self._handle_subscript_target(target, value)
         elif isinstance(target, (ast.Tuple, ast.List)):
-            # Tuple or list unpacking
-            try:
-                # Unpack the value
-                if not hasattr(value, "__iter__"):
-                    raise ValueError("Cannot unpack non-iterable value")
-
-                iter_value = iter(value)
-
-                # Check for starred expressions (extended unpacking)
-                starred_indices = [
-                    i
-                    for i, elt in enumerate(target.elts)
-                    if isinstance(elt, ast.Starred)
-                ]
-
-                if len(starred_indices) > 1:
-                    raise UnsupportedUnpackingError(
-                        "Cannot use multiple starred expressions in assignment"
-                    )
-
-                if starred_indices:
-                    # Handle starred unpacking
-                    star_index = starred_indices[0]
-                    starred_target = t.cast(
-                        ast.Starred, target.elts[star_index]
-                    )
-
-                    # Handle elements before the starred expression
-                    before_elements = target.elts[:star_index]
-                    for tgt in before_elements:
-                        try:
-                            self._handle_unpacking_target(tgt, next(iter_value))
-                        except StopIteration as e:
-                            raise ValueError(
-                                "Not enough values to unpack"
-                            ) from e
-
-                    # Collect remaining elements for the starred target
-                    starred_values = list(iter_value)
-
-                    # Calculate how many elements should be in the starred part
-                    # after the current group
-                    after_star_count = len(target.elts) - star_index - 1
-
-                    # If there are more elements after the starred part
-                    if after_star_count > 0:
-                        # Make sure there are enough elements
-                        if len(starred_values) < after_star_count:
-                            raise ValueError("Not enough values to unpack")
-
-                        # Separate starred values
-                        starred_list = starred_values[:-after_star_count]
-                        after_star_values = starred_values[-after_star_count:]
-
-                        # Assign starred target
-                        if isinstance(starred_target.value, ast.Name):
-                            self._set_name_value(
-                                starred_target.value.id, starred_list
-                            )
-
-                        # Assign elements after starred
-                        after_elements = target.elts[star_index + 1 :]
-                        for tgt, val in zip(after_elements, after_star_values):
-                            self._handle_unpacking_target(tgt, val)
-                    else:
-                        # If no elements after starred, just assign the rest
-                        # to the starred target
-                        if isinstance(starred_target.value, ast.Name):
-                            self._set_name_value(
-                                starred_target.value.id, starred_values
-                            )
-                else:
-                    # Standard unpacking without starred expression
-                    value_list = list(value)
-                    if len(value_list) < len(target.elts):
-                        raise ValueError("Not enough values to unpack")
-                    elif len(value_list) > len(target.elts):
-                        raise ValueError("Too many values to unpack")
-
-                    # Unpack each element
-                    for tgt, val in zip(target.elts, value):
-                        self._handle_unpacking_target(tgt, val)
-            except (TypeError, ValueError) as e:
-                raise UnsupportedUnpackingError(str(e)) from e
+            self._handle_sequence_unpacking(target, value)
         else:
             raise UnsupportedUnpackingError(
                 f"Unsupported unpacking target type: {type(target).__name__}"
