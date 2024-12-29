@@ -20,7 +20,13 @@ from monic.expressions import (
     reason="Pattern matching requires Python 3.10 or newer",
 )
 class TestPatternMatching:
-    """Test pattern matching functionality."""
+    """Test pattern matching functionality in Python 3.10+ match-case
+    statements.
+
+    Tests various pattern matching features including literal patterns,
+    sequence patterns, mapping patterns, OR patterns, AS patterns,
+    guard patterns, and class patterns.
+    """
 
     parser: ExpressionsParser
     interpreter: ExpressionsInterpreter
@@ -47,7 +53,14 @@ class TestPatternMatching:
         self.interpreter.global_env["Point"] = Point
 
     def test_literal_patterns(self):
-        """Test literal patterns."""
+        """Test literal pattern matching in match-case statements.
+
+        Tests:
+        1. Integer literal matching
+        2. String literal matching
+        3. Boolean literal matching
+        4. Wildcard pattern matching (_)
+        """
         code = """
         def match_value(x):
             match x:
@@ -74,7 +87,14 @@ class TestPatternMatching:
         assert self.interpreter.get_name_value("r4") == "other"
 
     def test_sequence_patterns(self):
-        """Test sequence patterns."""
+        """Test sequence pattern matching in match-case statements.
+
+        Tests:
+        1. Empty sequence matching
+        2. Single element sequence matching
+        3. Two element sequence matching
+        4. Sequence with rest (*) pattern matching
+        """
         code = """
         def match_sequence(lst):
             match lst:
@@ -101,7 +121,13 @@ class TestPatternMatching:
         assert self.interpreter.get_name_value("r4") == "first: 1, rest: [2, 3]"
 
     def test_mapping_patterns(self):
-        """Test mapping patterns."""
+        """Test mapping (dictionary) pattern matching in match-case statements.
+
+        Tests:
+        1. Exact key matching with value capture
+        2. Partial key matching with rest (**) capture
+        3. Non-matching pattern fallback
+        """
         code = """
         def match_mapping(data):
             match data:
@@ -127,7 +153,14 @@ class TestPatternMatching:
         assert self.interpreter.get_name_value("r3") == "no match"
 
     def test_or_patterns(self):
-        """Test OR patterns."""
+        """Test OR pattern matching (pattern1 | pattern2) in match-case
+        statements.
+
+        Tests:
+        1. Multiple numeric alternatives
+        2. Multiple string alternatives
+        3. Default case handling
+        """
         code = """
         def match_or(value):
             match value:
@@ -150,7 +183,13 @@ class TestPatternMatching:
         assert self.interpreter.get_name_value("r3") == "something else"
 
     def test_as_patterns(self):
-        """Test AS patterns."""
+        """Test AS pattern binding in match-case statements.
+
+        Tests:
+        1. List pattern with AS binding
+        2. Dictionary pattern with AS binding
+        3. Simple value capture with AS pattern
+        """
         code = """
         def match_as(value):
             match value:
@@ -175,7 +214,13 @@ class TestPatternMatching:
         assert self.interpreter.get_name_value("r3") == "captured value: hello"
 
     def test_guard_patterns(self):
-        """Test patterns with guards."""
+        """Test guard conditions in match-case patterns.
+
+        Tests:
+        1. Pattern matching with equality guard
+        2. Pattern matching with comparison guard
+        3. Pattern matching without guard (default case)
+        """
         code = """
         def match_guard(point):
             match point:
@@ -198,7 +243,14 @@ class TestPatternMatching:
         assert self.interpreter.get_name_value("r3") == "below diagonal"
 
     def test_class_patterns(self):
-        """Test class patterns."""
+        """Test class pattern matching with positional and keyword arguments.
+
+        Tests:
+        1. Origin point matching (0, 0)
+        2. Y-axis point matching (x=0)
+        3. X-axis point matching (y=0)
+        4. General point matching with coordinate capture
+        """
         code = """
         def match_class(point):
             match point:

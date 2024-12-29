@@ -13,7 +13,11 @@ from monic.expressions import (
 
 
 def test_basic_constant_evaluation():
-    """Test basic constant evaluation"""
+    """Test basic constant literal evaluation.
+
+    Verifies that the interpreter correctly evaluates and returns
+    simple constant literals without any operations.
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
     tree = parser.parse("42")
@@ -22,7 +26,17 @@ def test_basic_constant_evaluation():
 
 
 def test_binary_operations():
-    """Test various binary operations"""
+    """Test arithmetic binary operations.
+
+    Tests:
+    1. Addition (+)
+    2. Subtraction (-)
+    3. Multiplication (*)
+    4. Division (/)
+    5. Floor division (//)
+    6. Exponentiation (**)
+    7. Modulo (%)
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
     test_cases = [
@@ -42,7 +56,18 @@ def test_binary_operations():
 
 
 def test_comparison_operations():
-    """Test comparison operations"""
+    """Test comparison and membership operations.
+
+    Tests:
+    1. Less than (<)
+    2. Greater than (>)
+    3. Less than or equal (<=)
+    4. Greater than or equal (>=)
+    5. Equality (==)
+    6. Inequality (!=)
+    7. Membership (in)
+    8. Non-membership (not in)
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
     test_cases = [
@@ -63,7 +88,12 @@ def test_comparison_operations():
 
 
 def test_list_operations():
-    """Test list-related operations"""
+    """Test list creation and comprehension operations.
+
+    Tests:
+    1. Basic list literal creation
+    2. Simple list comprehension with transformation
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -79,7 +109,12 @@ def test_list_operations():
 
 
 def test_dict_operations():
-    """Test dictionary-related operations"""
+    """Test dictionary creation and comprehension operations.
+
+    Tests:
+    1. Basic dictionary literal creation
+    2. Dictionary comprehension with key-value transformation
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -95,7 +130,11 @@ def test_dict_operations():
 
 
 def test_lambda_function():
-    """Test lambda function creation and execution"""
+    """Test lambda function definition and execution.
+
+    Verifies that anonymous functions can be created and called
+    with proper argument passing and return value handling.
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -106,7 +145,11 @@ def test_lambda_function():
 
 
 def test_function_definition():
-    """Test function definition and calling"""
+    """Test named function definition and calling.
+
+    Verifies that functions can be defined with proper scope handling
+    and called with correct argument passing and return value handling.
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
     code = """
@@ -121,7 +164,14 @@ square(4)
 
 
 def test_list_unpacking():
-    """Test list unpacking assignments"""
+    """Test various list unpacking assignment patterns.
+
+    Tests:
+    1. Basic unpacking to multiple variables
+    2. Single starred unpacking with rest collection
+    3. Multiple variable unpacking with middle star
+    4. Edge case with empty middle collection
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -153,7 +203,12 @@ def test_list_unpacking():
 
 
 def test_error_handling():
-    """Test error handling mechanisms"""
+    """Test basic error handling scenarios.
+
+    Tests:
+    1. Division by zero exception
+    2. Undefined variable reference
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -169,7 +224,12 @@ def test_error_handling():
 
 
 def test_augmented_assignments():
-    """Test augmented assignment operations"""
+    """Test augmented assignment operations.
+
+    Tests:
+    1. Simple variable augmented assignment
+    2. List element augmented assignment
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -185,7 +245,12 @@ def test_augmented_assignments():
 
 
 def test_f_string_formatting():
-    """Test f-string formatting capabilities"""
+    """Test f-string formatting features.
+
+    Tests:
+    1. Basic variable interpolation
+    2. Expression evaluation with conversion specifiers
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -201,7 +266,12 @@ def test_f_string_formatting():
 
 
 def test_slice_operations():
-    """Test slice operations"""
+    """Test sequence slicing operations.
+
+    Tests:
+    1. Basic slice with start and end indices
+    2. Slice with step value
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -217,7 +287,11 @@ def test_slice_operations():
 
 
 def test_try_except_handling():
-    """Test try-except block handling"""
+    """Test exception handling with try-except blocks.
+
+    Verifies proper exception catching and alternate code path
+    execution in exception handlers.
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -235,7 +309,11 @@ x
 
 
 def test_break_statement():
-    """Test break statement in loops"""
+    """Test break statement functionality in loops.
+
+    Verifies that break statements properly terminate loop execution
+    and control flow continues after the loop.
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 

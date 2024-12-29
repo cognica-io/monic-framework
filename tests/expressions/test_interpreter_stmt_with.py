@@ -14,6 +14,12 @@ from monic.expressions import (
 
 
 class TestWithStatement:
+    """Test suite for with statement implementation in the interpreter.
+
+    Tests various aspects of with statement behavior including scope handling,
+    context manager protocol, variable lifetime, and exception handling.
+    """
+
     @pytest.fixture
     def parser(self):
         return ExpressionsParser()
@@ -38,7 +44,13 @@ class TestWithStatement:
             return False
 
     def test_with_statement_scope_isolation(self, parser, interpreter):
-        """Test that variables in with block are properly scoped"""
+        """Test variable scope isolation in with statements.
+
+        Tests:
+        1. Variables defined inside with block are not accessible outside
+        2. Outer scope variables are accessible inside with block
+        3. Variable cleanup after with block execution
+        """
         cm = self.SimpleContextManager()
         interpreter.global_env["cm"] = cm
 
@@ -59,7 +71,13 @@ result = inner  # Should raise NameError
         assert "inner" not in interpreter.local_env
 
     def test_with_statement_global_access(self, parser, interpreter):
-        """Test accessing global variables from within with block"""
+        """Test global variable access within with statements.
+
+        Tests:
+        1. Global variable declaration inside with block
+        2. Global variable modification inside with block
+        3. Global variable persistence after with block
+        """
         cm = self.SimpleContextManager()
         interpreter.global_env["cm"] = cm
 
@@ -76,7 +94,13 @@ with cm:
         assert interpreter.global_env["x"] == "modified"
 
     def test_with_statement_nonlocal_access(self, parser, interpreter):
-        """Test accessing nonlocal variables from within with block"""
+        """Test nonlocal variable access within with statements.
+
+        Tests:
+        1. Nonlocal variable access in nested function scope
+        2. Nonlocal variable modification inside with block
+        3. Nonlocal variable persistence after with block
+        """
         cm = self.SimpleContextManager()
         interpreter.global_env["cm"] = cm
 
@@ -96,7 +120,13 @@ result = outer()
         assert interpreter.local_env["result"] == "modified"
 
     def test_nested_with_statements_scope(self, parser, interpreter):
-        """Test scope handling in nested with statements"""
+        """Test scope handling in nested with statements.
+
+        Tests:
+        1. Multiple context manager nesting
+        2. Variable access across nested scopes
+        3. Variable cleanup after nested blocks
+        """
         cm1 = self.SimpleContextManager()
         cm2 = self.SimpleContextManager()
         interpreter.global_env["cm1"] = cm1
@@ -118,7 +148,13 @@ with cm1 as v1:
         assert "z" not in interpreter.local_env
 
     def test_with_statement_exception_scope(self, parser, interpreter):
-        """Test scope handling when exceptions occur"""
+        """Test scope handling during exception scenarios.
+
+        Tests:
+        1. Variable scope during exception handling
+        2. Variable cleanup after exception
+        3. Exception propagation through context manager
+        """
 
         class ExceptionContextManager:
             def __enter__(self):
@@ -147,7 +183,13 @@ result = x  # Should raise NameError
         assert "x" not in interpreter.local_env
 
     def test_multiple_context_managers_scope(self, parser, interpreter):
-        """Test scope handling with multiple context managers"""
+        """Test scope handling with multiple context managers in single with.
+
+        Tests:
+        1. Multiple context manager initialization
+        2. Variable access to multiple context values
+        3. Variable cleanup after with block
+        """
         cm1 = self.SimpleContextManager()
         cm2 = self.SimpleContextManager()
         interpreter.global_env["cm1"] = cm1
@@ -168,7 +210,13 @@ with cm1 as v1, cm2 as v2:
         assert "combined" not in interpreter.local_env
 
     def test_with_statement_variable_lifetime(self, parser, interpreter):
-        """Test that variables defined in with block don't persist"""
+        """Test variable lifetime and visibility in with statements.
+
+        Tests:
+        1. Variable visibility before, during, and after with block
+        2. Variable modification persistence
+        3. Temporary variable cleanup
+        """
         cm = self.SimpleContextManager()
         interpreter.global_env["cm"] = cm
 
@@ -188,7 +236,13 @@ after = 'visible'
         assert interpreter.local_env["before"] == "modified"
 
     def test_with_statement_nested_function_scope(self, parser, interpreter):
-        """Test interaction between with statement and function scopes"""
+        """Test interaction between with statements and function scopes.
+
+        Tests:
+        1. Function definition inside with block
+        2. Nonlocal variable access in nested function
+        3. Function execution within with block context
+        """
         cm = self.SimpleContextManager()
         interpreter.global_env["cm"] = cm
 

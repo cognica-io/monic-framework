@@ -16,7 +16,13 @@ from monic.expressions import (
 
 
 def test_timeout_infinite_loop():
-    """Test that an infinite loop raises a TimeoutError."""
+    """Test timeout handling for infinite loops.
+
+    Tests:
+    1. Infinite while loop is interrupted by timeout
+    2. Timeout occurs within expected time window (0.09-0.5s)
+    3. Appropriate TimeoutError is raised
+    """
     parser = ExpressionsParser()
     context = ExpressionsContext(timeout=0.1)
     interpreter = ExpressionsInterpreter(context)
@@ -40,7 +46,13 @@ while True:
 
 
 def test_timeout_long_computation():
-    """Test that a long-running computation raises a TimeoutError."""
+    """Test timeout handling for computationally expensive operations.
+
+    Tests:
+    1. Recursive Fibonacci calculation is interrupted
+    2. Timeout occurs within expected time window (0.09-0.5s)
+    3. Appropriate TimeoutError is raised
+    """
     parser = ExpressionsParser()
     context = ExpressionsContext(timeout=0.1)
     interpreter = ExpressionsInterpreter(context)
@@ -69,7 +81,13 @@ result = fibonacci(35)
 
 
 def test_no_timeout_short_computation():
-    """Test that a short computation does not raise a TimeoutError."""
+    """Test normal execution of quick computations with timeout set.
+
+    Tests:
+    1. Short computation completes within timeout window
+    2. Correct result is returned
+    3. Execution time is within reasonable bounds
+    """
     parser = ExpressionsParser()
     context = ExpressionsContext(timeout=1.0)
     interpreter = ExpressionsInterpreter(context)
@@ -93,7 +111,13 @@ result
 
 
 def test_timeout_none():
-    """Test that when timeout is None, no timeout occurs."""
+    """Test execution behavior when timeout is disabled.
+
+    Tests:
+    1. Long computation completes without interruption
+    2. No TimeoutError is raised
+    3. Execution takes significant time (>3s)
+    """
     parser = ExpressionsParser()
     context = ExpressionsContext(timeout=None)
     interpreter = ExpressionsInterpreter(context)
@@ -121,7 +145,13 @@ result = fibonacci(28)
 
 
 def test_timeout_repeated_method_calls():
-    """Test timeout mechanism works across multiple method calls."""
+    """Test timeout handling across multiple function calls.
+
+    Tests:
+    1. Multiple calls to computationally expensive function
+    2. Timeout occurs within expected time window (0.09-0.5s)
+    3. TimeoutError is raised before all calls complete
+    """
     parser = ExpressionsParser()
     context = ExpressionsContext(timeout=0.1)
     interpreter = ExpressionsInterpreter(context)
@@ -153,7 +183,13 @@ result2 = slow_function()
 # Performance test with parametrization
 @pytest.mark.parametrize("timeout", [0.05, 0.1, 0.2])
 def test_timeout_variability(timeout):
-    """Test timeout mechanism with different timeout values."""
+    """Test timeout mechanism with different timeout values.
+
+    Tests:
+    1. Busy-wait loop is interrupted by different timeouts
+    2. Timeout occurs within expected window for each value
+    3. Consistent behavior across different timeout settings
+    """
     parser = ExpressionsParser()
     context = ExpressionsContext(timeout=timeout)
     interpreter = ExpressionsInterpreter(context)

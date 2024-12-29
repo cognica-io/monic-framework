@@ -26,7 +26,14 @@ def reset_registry():
 
 
 def test_complex_method_handling():
-    """Test complex method handling with descriptors and bound methods."""
+    """Test complex method handling including property descriptors,
+    bound methods, and static methods.
+
+    Tests:
+    1. Property descriptor access and modification
+    2. Method binding and execution
+    3. Static method calls on both registered and unregistered classes
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -59,7 +66,7 @@ def test_complex_method_handling():
 obj = test.TestClass()
 obj.value = 42
 result = obj.value + obj.method()
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -71,7 +78,7 @@ obj = test.TestClass()
 method = obj.method
 obj.value = 10
 result = method()
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -80,7 +87,7 @@ result  # Return the result
     # Test registered class static method
     code = """
 result = test.TestClass.static_method()
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -94,7 +101,7 @@ class StaticTest:
         return 42
 
 result = StaticTest.static_method()
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -102,7 +109,14 @@ result  # Return the result
 
 
 def test_comprehension_edge_cases():
-    """Test edge cases in list/set/dict comprehensions."""
+    """Test edge cases in list, set, and dict comprehensions.
+
+    Tests:
+    1. Nested comprehensions with multiple if conditions
+    2. Set comprehension with complex conditions
+    3. Dict comprehension with key transformation
+    4. Nested dict comprehension with enumeration
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -110,7 +124,7 @@ def test_comprehension_edge_cases():
     code = """
 matrix = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
 flat = [x for row in matrix if sum(row) > 10 for x in row if x % 2 == 0]
-flat  # Return the result
+flat
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -120,7 +134,7 @@ flat  # Return the result
     code = """
 data = [1, 2, 2, 3, 3, 3]
 unique_squares = {x*x for x in data if x > 1}
-unique_squares  # Return the result
+unique_squares
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -130,7 +144,7 @@ unique_squares  # Return the result
     code = """
 items = ['a', 'bb', 'ccc']
 lengths = {s: len(s) for s in items if len(s) > 1}
-lengths  # Return the result
+lengths
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -140,7 +154,7 @@ lengths  # Return the result
     code = """
 matrix = [[1, 2], [3, 4]]
 result = {i: {j: i*j for j in row} for i, row in enumerate(matrix, 1)}
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -171,7 +185,7 @@ class Test:
         return 42
 
 result = Test.class_method()
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -193,7 +207,7 @@ class C(A, B):
 
 obj = C()
 result = obj.method()
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -215,7 +229,7 @@ class Child(Base):
 
 obj = Child()
 result = obj.value
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -245,7 +259,7 @@ result.append(get_command(["quit"]))
 result.append(get_command(["load", "test.txt"]))
 result.append(get_command(["save", "data.dat"]))
 result.append(get_command(["invalid"]))
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -272,7 +286,7 @@ result.append(classify_point((0, 5)))
 result.append(classify_point((3, 0)))
 result.append(classify_point((2, 2)))
 result.append(classify_point((1, 2)))
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -304,7 +318,7 @@ result.append(classify_object(Point(0, 5)))
 result.append(classify_object(Point(3, 0)))
 result.append(classify_object(Point(2, 2)))
 result.append(classify_object(42))
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -312,7 +326,14 @@ result  # Return the result
 
 
 def test_registry_error_paths():
-    """Test error paths in the registry module."""
+    """Test error paths in the registry module.
+
+    Tests:
+    1. Registering invalid names (namespace conflicts)
+    2. Duplicate registration attempts
+    3. Accessing non-existent items
+    4. Accessing non-existent namespaces
+    """
     # Test registering invalid names
     with pytest.raises(
         ValueError, match="is already registered as a non-namespace"
@@ -347,7 +368,15 @@ def test_registry_error_paths():
 
 
 def test_error_handling_edge_cases():
-    """Test error handling edge cases."""
+    """Test error handling edge cases in the interpreter.
+
+    Tests:
+    1. Invalid unpacking scenarios
+    2. Return/break/continue outside proper context
+    3. Invalid attribute access
+    4. Forbidden function calls
+    5. Invalid import attempts
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -455,7 +484,15 @@ except:
 
 
 def test_control_flow_edge_cases():
-    """Test control flow edge cases."""
+    """Test control flow edge cases in loops and conditionals.
+
+    Tests:
+    1. Break in nested loops
+    2. Continue in nested loops
+    3. While loop with break and continue
+    4. For loop with else clause
+    5. While loop with else clause
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -467,7 +504,7 @@ for i in range(3):
         if i == j == 1:
             break
         result.append((i, j))
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -481,7 +518,7 @@ for i in range(3):
         if i == j:
             continue
         result.append((i, j))
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -498,7 +535,7 @@ while i < 5:
     if i == 4:
         break
     result.append(i)
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -513,7 +550,7 @@ for i in range(3):
     result.append(i)
     if i == 2:
         result.append('done')
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -528,7 +565,7 @@ while i < 3:
     i += 1
     if i == 3:
         result.append('done')
-result  # Return the result
+result
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
@@ -536,9 +573,11 @@ result  # Return the result
 
 
 def test_interpreter_catch_generic_exception():
-    """
-    Exercise lines around 206-208 in interpreter.execute(),
-    where a user exception is caught and re-raised with the 'Runtime error:' prefix.
+    """Test the interpreter's generic exception handling.
+
+    Verifies that when a user exception occurs during execution,
+    it is caught and re-raised with appropriate error information.
+    Uses ZeroDivisionError as a test case.
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -551,9 +590,10 @@ def test_interpreter_catch_generic_exception():
 
 
 def test_nonlocal_binding_error():
-    """
-    Exercise line 320 for 'visit_Nonlocal()' when no outer scope is available
-    to host a 'nonlocal' reference.
+    """Test nonlocal binding error handling.
+
+    Verifies that attempting to use a nonlocal reference without a proper
+    outer scope binding raises a SyntaxError.
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -571,9 +611,10 @@ outer()
 
 
 def test_global_name_error():
-    """
-    Exercise lines 337-339 in '_get_name_value()',
-    specifically the path for 'name in current.globals' not in 'global_env'.
+    """Test global name error handling.
+
+    Verifies that accessing a global name that is declared but not defined
+    raises a NameError with appropriate error message.
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -588,10 +629,10 @@ print(x)
 
 
 def test_nonlocal_name_error():
-    """
-    Exercise lines 343-346 in '_get_name_value()',
-    specifically the path where a nonlocal name cannot be found in any outer
-    scope.
+    """Test nonlocal name error handling.
+
+    Verifies that attempting to use a nonlocal declaration for a name
+    that doesn't exist in any outer scope raises a SyntaxError.
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()

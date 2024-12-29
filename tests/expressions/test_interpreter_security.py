@@ -14,7 +14,14 @@ from monic.expressions import (
 
 
 def test_security_checks():
-    """Test security-related checks"""
+    """Test comprehensive security checks in the interpreter.
+
+    Tests:
+    1. Forbidden built-in function calls (eval, exec, compile, __import__)
+    2. Forbidden attribute access (__code__, __globals__, __dict__)
+    3. Forbidden access to __builtins__
+    4. Forbidden import statements
+    """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
@@ -52,7 +59,11 @@ def test_security_checks():
 
 
 def test_forbidden_function_call():
-    """Test that calling a forbidden function raises a SecurityError."""
+    """Test security restrictions on specific function calls.
+
+    Verifies that attempting to call time.sleep(), which is in the
+    FORBIDDEN_NAMES list, raises a SecurityError.
+    """
     parser = ExpressionsParser()
     tree = parser.parse("time.sleep(1)")
     interpreter = ExpressionsInterpreter()
