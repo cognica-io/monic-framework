@@ -1466,6 +1466,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         self.local_env = outer_env.copy()
 
         try:
+
             def generator() -> t.Generator[t.Any, None, None]:
                 def process_generator(
                     generators: list, index: int = 0
@@ -1622,7 +1623,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         # Process next generator or append result
                         process_generator(generators, index + 1)
 
-                    # Update outer environment with any named expression bindings
+                    # Update outer environment with any named expression
+                    # bindings
                     for name, value in self.local_env.items():
                         if name not in current_env:
                             outer_env[name] = value
