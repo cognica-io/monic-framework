@@ -1803,9 +1803,19 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             try:
                 return value[slice_val]
             except TypeError as e:
-                raise TypeError(
-                    f"Invalid subscript type: {type(slice_val).__name__}"
-                ) from e
+                if isinstance(value, list):
+                    raise TypeError(
+                        "list indices must be integers or slices, not "
+                        f"{type(slice_val).__name__}"
+                    ) from e
+                elif isinstance(value, dict):
+                    raise TypeError(
+                        "unhashable type: " f"{type(slice_val).__name__}"
+                    ) from e
+                else:
+                    raise TypeError(
+                        f"{type(value).__name__} indices must be integers"
+                    ) from e
 
     def visit_Expr(self, node: ast.Expr) -> t.Any:
         """Visit an expression statement.
