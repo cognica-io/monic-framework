@@ -4,6 +4,8 @@
 # Copyright (c) 2024 Cognica, Inc.
 #
 
+# pylint: disable=protected-access
+
 import pytest
 
 from monic.expressions import (
@@ -12,7 +14,7 @@ from monic.expressions import (
     register,
     register_module,
 )
-from monic.expressions.registry import registry
+from monic.expressions.registry import registry, NamespaceProxy
 
 
 @pytest.fixture(autouse=True)
@@ -292,3 +294,250 @@ def test_register_module_with_nested_name():
     assert parsed.scheme == "https"
     assert parsed.netloc == "example.com"
     assert parsed.path == "/path"
+
+
+def test_register_non_nested_name_conflict():
+    """
+    Test that registering a non-nested name that already exists raises an error.
+    """
+    namespace = {}
+    registry._register_in_namespace("test", 42, namespace)
+
+    with pytest.raises(ValueError) as exc_info:
+        registry._register_in_namespace("test", 43, namespace)
+
+    assert "Name 'test' is already registered" in str(exc_info.value)
+
+
+def test_namespace_proxy_attribute_error():
+    """
+    Test that accessing non-existent attribute in NamespaceProxy raises
+    AttributeError.
+    """
+    namespace = {"a": 1}
+    proxy = NamespaceProxy(namespace)
+
+    with pytest.raises(AttributeError) as exc_info:
+        _ = proxy.non_existent
+
+    assert "'non_existent' not found in namespace" in str(exc_info.value)
+
+
+def test_register_object_without_name():
+    """
+    Test that registering an object without a name and no __name__ attribute
+    raises ValueError.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        registry.register()(object())
+
+    assert "No name provided and object has no __name__ attribute" in str(
+        exc_info.value
+    )
+
+
+def test_register_module_import_error():
+    """Test that registering a non-existent module raises ImportError."""
+    with pytest.raises(ImportError) as exc_info:
+        register_module("non_existent_module")
+
+    assert "Failed to import module 'non_existent_module'" in str(
+        exc_info.value
+    )
+
+
+def test_register_module_duplicate():
+    """Test that registering the same module twice raises ValueError."""
+    register_module("math")
+
+    with pytest.raises(ValueError) as exc_info:
+        register_module("math")
+
+    assert "Module 'math' is already registered" in str(exc_info.value)
+
+
+def test_get_all_with_nested_namespaces():
+    """Test that get_all properly handles nested namespaces."""
+
+    @register("math.functions.add")
+    def add(x, y):  # pylint: disable=unused-variable
+        return x + y
+
+    @register("math.constants")
+    class Constants:  # pylint: disable=unused-variable
+        PI = 3.14159
+
+    all_objects = registry.get_all()
+    assert isinstance(all_objects["math"], NamespaceProxy)
+    assert isinstance(all_objects["math"].functions, NamespaceProxy)
+    assert callable(all_objects["math"].functions.add)
+    assert all_objects["math"].constants.PI == 3.14159
+
+
+def test_register_callable_without_name():
+    """
+    Test that registering a callable without __name__ attribute raises
+    ValueError.
+    """
+
+    # Create a callable object without __name__ attribute
+    class CallableWithoutName:
+        def __call__(self):
+            pass
+
+    callable_obj = CallableWithoutName()
+
+    with pytest.raises(ValueError) as exc_info:
+        registry.register(callable_obj)
+
+    assert "Object has no __name__ attribute and no name was provided" in str(
+        exc_info.value
+    )
+
+
+def test_is_registered_with_function():
+    """
+    Test is_registered with a function that has __is_expressions_type__
+    attribute.
+    """
+
+    def test_func():
+        pass
+
+    setattr(test_func, "__is_expressions_type__", True)
+
+    assert registry.is_registered(test_func)
+
+
+def test_get_all_with_modules():
+    """Test that get_all properly includes registered modules."""
+    register_module("math", alias="math_alias")
+    register_module("random")
+
+    all_objects = registry.get_all()
+    assert "math_alias" in all_objects
+    assert "random" in all_objects
+
+
+def test_register_with_invalid_name():
+    """Test that registering with an invalid name type raises ValueError."""
+
+    class TestObject:
+        pass
+
+    with pytest.raises(ValueError) as exc_info:
+        registry.register()(TestObject())  # Pass an object without __name__
+
+    assert "No name provided and object has no __name__ attribute" in str(
+        exc_info.value
+    )
+
+
+def test_register_in_namespace_type_error():
+    """
+    Test that registering in namespace with a non-string name raises TypeError.
+    """
+    namespace = {}
+    with pytest.raises(TypeError) as exc_info:
+        # Pass a non-string name
+        registry._register_in_namespace(123, "value", namespace)  # type: ignore
+
+    assert "Name must be a string" in str(exc_info.value)
+
+
+def test_register_in_namespace_empty_name():
+    """
+    Test that registering in namespace with an empty name raises ValueError.
+    """
+    namespace = {}
+    with pytest.raises(ValueError) as exc_info:
+        registry._register_in_namespace(
+            "", "value", namespace
+        )  # Pass an empty string
+
+    assert "Name cannot be empty" in str(exc_info.value)
+
+
+def test_is_registered_with_non_function():
+    """Test is_registered with a non-function object."""
+
+    class TestClass:
+        pass
+
+    obj = TestClass()
+    assert registry.is_registered(
+        obj
+    )  # Should return True for non-function objects
+
+
+def test_get_all_with_mixed_content():
+    """
+    Test that get_all properly handles mixed content
+    (modules, objects, namespaces).
+    """
+    # Register a module
+    register_module("math")
+
+    # Register a function in a namespace
+    @register("utils.helper")
+    def helper():  # pylint: disable=unused-variable
+        pass
+
+    # Register a direct object
+    @register
+    def direct_func():  # pylint: disable=unused-variable
+        pass
+
+    all_objects = registry.get_all()
+    assert "math" in all_objects
+    assert isinstance(all_objects["utils"], NamespaceProxy)
+    assert callable(all_objects["utils"].helper)
+    assert callable(all_objects["direct_func"])
+
+
+def test_is_registered_with_string_name():
+    """Test is_registered with a string name."""
+
+    @register("test.func")
+    def test_func():  # pylint: disable=unused-variable
+        pass
+
+    assert registry.is_registered("test.func")
+    assert not registry.is_registered("non.existent.func")
+
+
+def test_get_all_with_non_dict_values():
+    """Test that get_all properly handles non-dict values."""
+
+    @register("test.value")
+    def test_func():  # pylint: disable=unused-variable
+        pass
+
+    @register("direct_value")
+    def direct_func():  # pylint: disable=unused-variable
+        pass
+
+    register_module("math")
+
+    all_objects = registry.get_all()
+    assert callable(all_objects["test"].value)  # Nested function
+    assert callable(all_objects["direct_value"])  # Direct function
+    assert hasattr(all_objects["math"], "sqrt")  # Module
+
+
+def test_register_in_namespace_with_empty_parts():
+    """Test registering in namespace with empty parts in the name."""
+    namespace = {}
+    with pytest.raises(ValueError) as exc_info:
+        registry._register_in_namespace("test..func", "value", namespace)
+
+    assert "Name cannot contain empty parts" in str(exc_info.value)
+
+
+def test_register_in_nested_namespace_with_empty_parts():
+    """Test registering in nested namespace with empty parts in the name."""
+    namespace = {"test": {"nested": {}}}
+    with pytest.raises(ValueError) as exc_info:
+        registry._register_in_namespace("test.nested..func", "value", namespace)
+
+    assert "Name cannot contain empty parts" in str(exc_info.value)
