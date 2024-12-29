@@ -969,7 +969,17 @@ def test_function_definition_errors():
     with pytest.raises(SyntaxError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert "arguments cannot follow var-keyword argument" in str(exc_info.value)
+    # Python's error message for arguments after **kwargs varies by version:
+    # - Python <= 3.10: "invalid syntax"
+    # - Python >= 3.11: "arguments cannot follow var-keyword argument"
+    error_msg = str(exc_info.value)
+    assert any(
+        msg in error_msg
+        for msg in [
+            "invalid syntax",
+            "arguments cannot follow var-keyword argument",
+        ]
+    )
 
 
 def test_class_definition_errors():
