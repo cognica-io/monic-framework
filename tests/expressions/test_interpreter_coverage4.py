@@ -13,7 +13,7 @@ from monic.expressions import (
     ExpressionsInterpreter,
     UnsupportedUnpackingError,
 )
-from monic.expressions.registry import registry, NamespaceProxy
+from monic.expressions.registry import registry, NamespaceProxy, Registry
 
 
 @pytest.fixture(autouse=True)
@@ -737,16 +737,12 @@ def test_class_with_super():
 
 def test_registry_initialization():
     """Test registry initialization and attributes."""
-    from monic.expressions.registry import Registry
-
     reg = Registry()
     reg.reset()
 
 
 def test_registry_register_errors():
     """Test error handling in register method."""
-    from monic.expressions.registry import Registry
-
     reg = Registry()
     error1 = ""
     error2 = ""
@@ -758,7 +754,7 @@ def test_registry_register_errors():
 
     class NoName:
         def __call__(self):
-            return None
+            return None  # pragma: no cover
 
     obj = NoName()
     try:
@@ -772,8 +768,6 @@ def test_registry_register_errors():
 
 def test_registry_register_module_errors():
     """Test error handling in register_module method."""
-    from monic.expressions.registry import Registry
-
     reg = Registry()
     error = ""
 
@@ -787,8 +781,6 @@ def test_registry_register_module_errors():
 
 def test_registry_get_all_errors():
     """Test error handling in get_all method."""
-    from monic.expressions.registry import Registry
-
     reg = Registry()
     error = ""
 

@@ -361,7 +361,7 @@ def test_get_all_with_nested_namespaces():
 
     @register("math.functions.add")
     def add(x, y):  # pylint: disable=unused-variable
-        return x + y
+        return x + y  # pragma: no cover
 
     @register("math.constants")
     class Constants:  # pylint: disable=unused-variable
@@ -383,7 +383,7 @@ def test_register_callable_without_name():
     # Create a callable object without __name__ attribute
     class CallableWithoutName:
         def __call__(self):
-            pass
+            pass  # pragma: no cover
 
     callable_obj = CallableWithoutName()
 
@@ -402,7 +402,7 @@ def test_is_registered_with_function():
     """
 
     def test_func():
-        pass
+        pass  # pragma: no cover
 
     setattr(test_func, "__is_expressions_type__", True)
 
@@ -423,7 +423,7 @@ def test_register_with_invalid_name():
     """Test that registering with an invalid name type raises ValueError."""
 
     class TestObject:
-        pass
+        pass  # pragma: no cover
 
     with pytest.raises(ValueError) as exc_info:
         registry.register()(TestObject())  # Pass an object without __name__
@@ -481,12 +481,12 @@ def test_get_all_with_mixed_content():
     # Register a function in a namespace
     @register("utils.helper")
     def helper():  # pylint: disable=unused-variable
-        pass
+        pass  # pragma: no cover
 
     # Register a direct object
     @register
     def direct_func():  # pylint: disable=unused-variable
-        pass
+        pass  # pragma: no cover
 
     all_objects = registry.get_all()
     assert "math" in all_objects
@@ -500,7 +500,7 @@ def test_is_registered_with_string_name():
 
     @register("test.func")
     def test_func():  # pylint: disable=unused-variable
-        pass
+        pass  # pragma: no cover
 
     assert registry.is_registered("test.func")
     assert not registry.is_registered("non.existent.func")
@@ -511,11 +511,11 @@ def test_get_all_with_non_dict_values():
 
     @register("test.value")
     def test_func():  # pylint: disable=unused-variable
-        pass
+        pass  # pragma: no cover
 
     @register("direct_value")
     def direct_func():  # pylint: disable=unused-variable
-        pass
+        pass  # pragma: no cover
 
     register_module("math")
 
