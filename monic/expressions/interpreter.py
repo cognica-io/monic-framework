@@ -299,6 +299,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         at least one enclosing (function) scope. If not found, raise
         SyntaxError as in the standard Python behavior.
         """
+        if len(self.scope_stack) < 2:
+            raise SyntaxError(
+                "nonlocal declaration not allowed at module level"
+            )
+
         for name in node.names:
             # Mark this name as nonlocal in the current scope
             self.current_scope.nonlocals.add(name)
@@ -308,7 +313,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             for scope in reversed(self.scope_stack[:-1]):
                 # If already local or already marked nonlocal there, consider
                 # it found
-                if (name in scope.locals) or (name in scope.nonlocals):
+                if (
+                    name in scope.locals
+                    or name in scope.nonlocals
+                    or name in self.local_env
+                ):
                     found = True
                     break
 
@@ -361,7 +370,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             # Walk backward through scopes to find the correct one
             for i in range(len(self.scope_stack) - 2, -1, -1):
                 scope = self.scope_stack[i]
-                if name in scope.locals or name in scope.nonlocals:
+                if (
+                    name in scope.locals
+                    or name in scope.nonlocals
+                    or name in self.local_env
+                ):
                     # Found the appropriate scope, set value in local_env
                     self.local_env[name] = value
                     return
@@ -1072,6 +1085,34 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         self.scope_stack.append(def_scope)
 
         try:
+            # Validate nonlocal declarations at function definition time
+            for stmt in node.body:
+                if isinstance(stmt, ast.Nonlocal):
+                    if len(self.scope_stack) < 2:
+                        raise SyntaxError(
+                            "nonlocal declaration not allowed at module level"
+                        )
+                    # For non-nested functions, check bindings at definition
+                    # time
+                    if len(self.scope_stack) == 2:  # Only one outer scope
+                        for name in stmt.names:
+                            found = False
+                            # Check all outer scopes
+                            # (excluding the current scope)
+                            for scope in reversed(self.scope_stack[:-1]):
+                                if (
+                                    name in scope.locals
+                                    or name in scope.nonlocals
+                                    or name in self.local_env
+                                ):
+                                    found = True
+                                    break
+                            if not found:
+                                raise SyntaxError(
+                                    f"No binding for nonlocal '{name}' "
+                                    "found in outer scopes"
+                                )
+
             closure_env: t.Dict[str, t.Any] = {}
             outer_env: t.Dict[str, t.Any] = self.local_env
 
@@ -1100,6 +1141,30 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 try:
                     # Register the function name itself for recursion
                     self.local_env[node.name] = func
+
+                    # Process nonlocal declarations at function execution time
+                    for stmt in node.body:
+                        if isinstance(stmt, ast.Nonlocal):
+                            for name in stmt.names:
+                                found = False
+                                # Check all outer scopes
+                                # (excluding the current scope)
+                                for scope in reversed(self.scope_stack[:-1]):
+                                    if (
+                                        name in scope.locals
+                                        or name in scope.nonlocals
+                                        or name in self.local_env
+                                    ):
+                                        found = True
+                                        break
+                                if not found:
+                                    raise SyntaxError(
+                                        f"No binding for nonlocal '{name}' "
+                                        "found in outer scopes"
+                                    )
+                                # Mark this name as nonlocal in the current
+                                # scope
+                                self.current_scope.nonlocals.add(name)
 
                     ###############################
                     # 1) Bind the "regular" positional params
