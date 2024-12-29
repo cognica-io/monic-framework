@@ -2,7 +2,7 @@
 name = "monic-framework"
 version = "0.1.0"
 description = "Monic Framework"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = []
 authors = [{ name = "Cognica, Inc.", email = "support@cognica.io" }]
 readme = "README.md"
