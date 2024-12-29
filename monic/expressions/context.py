@@ -4,11 +4,10 @@
 # Copyright (c) 2024 Cognica, Inc.
 #
 
-import typing as t
 from dataclasses import dataclass
 
 
 @dataclass
 class ExpressionsContext:
     # The timeout for evaluating the expression in seconds.
-    timeout: t.Optional[float] = 10.0
+    timeout: float | None = 10.0

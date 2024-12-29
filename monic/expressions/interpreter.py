@@ -14,7 +14,6 @@
 import ast
 import datetime
 import operator
-import sys
 import time
 import types
 import typing as t
@@ -52,6 +51,68 @@ class Scope:
     nonlocals: t.Set[str] = field(default_factory=set)
     # Names assigned in current scope
     locals: t.Set[str] = field(default_factory=set)
+
+
+class ScopeContext:
+    """Context manager for managing scope stack.
+
+    This context manager ensures that scopes are properly pushed and popped
+    from the stack, even if an exception occurs.
+    """
+
+    def __init__(
+        self,
+        interpreter: "ExpressionsInterpreter",
+        save_env: bool = False,
+    ) -> None:
+        self.scope = Scope()
+        self.interpreter = interpreter
+        self.save_env = save_env
+
+        self.saved_env: dict[str, t.Any] = {}
+        self.new_env: dict[str, t.Any] = {}
+
+    def __enter__(self) -> tuple[Scope, dict[str, t.Any] | None]:
+        self.interpreter.scope_stack.append(self.scope)
+        if self.save_env:
+            # Save the current environment
+            self.saved_env = self.interpreter.local_env.copy()
+            # Create a new environment that inherits from the saved one
+            self.new_env = {}
+            # Copy over values from outer scope that might be needed
+            if len(self.interpreter.scope_stack) > 1:
+                outer_scope = self.interpreter.scope_stack[-2]
+                for name in outer_scope.locals:
+                    if name in self.saved_env:
+                        self.new_env[name] = self.saved_env[name]
+            self.interpreter.local_env = self.new_env
+            return self.scope, self.saved_env
+        return self.scope, None
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> None:
+        if self.save_env:
+            # Update the saved environment with any changes
+            # that should persist outside the with block
+            updated_env = {}
+            for name, value in self.interpreter.local_env.items():
+                if name in self.saved_env:
+                    # Keep variables that existed in outer scope
+                    updated_env[name] = value
+                elif (
+                    len(self.interpreter.scope_stack) > 1
+                    and name in self.interpreter.scope_stack[-2].locals
+                ):
+                    # Keep nonlocal variables
+                    updated_env[name] = value
+            # Restore the saved environment with updates
+            self.saved_env.update(updated_env)
+            self.interpreter.local_env = self.saved_env
+        self.interpreter.scope_stack.pop()
 
 
 @dataclass
@@ -568,117 +629,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         index = self.visit(target.slice)
         container[index] = value
 
-    def _handle_starred_unpacking(
-        self,
-        target_elts: list[ast.expr],
-        value: t.Any,
-        star_index: int,
-        starred_target: ast.Starred,
-    ) -> None:
-        """Handle starred unpacking in sequence assignments.
-
-        Args:
-            target_elts: List of target elements
-            value: Value being unpacked
-            star_index: Index of the starred expression
-            starred_target: The starred target node
-
-        Raises:
-            ValueError: If there are not enough values to unpack
-            UnsupportedUnpackingError: If unpacking pattern is not supported
-        """
-        iter_value = iter(value)
-
-        # Handle elements before the starred expression
-        before_elements = target_elts[:star_index]
-        for tgt in before_elements:
-            try:
-                self._handle_unpacking_target(tgt, next(iter_value))
-            except StopIteration as e:
-                raise ValueError("Not enough values to unpack") from e
-
-        # Collect remaining elements for the starred target
-        starred_values = list(iter_value)
-
-        # Calculate how many elements should be in the starred part
-        after_star_count = len(target_elts) - star_index - 1
-
-        # If there are more elements after the starred part
-        if after_star_count > 0:
-            # Make sure there are enough elements
-            if len(starred_values) < after_star_count:
-                raise ValueError("Not enough values to unpack")
-
-            # Separate starred values
-            starred_list = starred_values[:-after_star_count]
-            after_star_values = starred_values[-after_star_count:]
-
-            # Assign starred target
-            if isinstance(starred_target.value, ast.Name):
-                self._set_name_value(starred_target.value.id, starred_list)
-
-            # Assign elements after starred
-            after_elements = target_elts[star_index + 1 :]
-            for tgt, val in zip(after_elements, after_star_values):
-                self._handle_unpacking_target(tgt, val)
-        else:
-            # If no elements after starred, just assign the rest
-            # to the starred target
-            if isinstance(starred_target.value, ast.Name):
-                self._set_name_value(starred_target.value.id, starred_values)
-
-    def _handle_sequence_unpacking(
-        self,
-        target: ast.Tuple | ast.List,
-        value: t.Any,
-    ) -> None:
-        """Handle sequence (tuple/list) unpacking.
-
-        Args:
-            target: Tuple or List AST node
-            value: Value to unpack
-
-        Raises:
-            ValueError: If value cannot be unpacked
-            UnsupportedUnpackingError: If unpacking pattern is not supported
-        """
-        try:
-            if not hasattr(value, "__iter__"):
-                raise ValueError("Cannot unpack non-iterable value")
-
-            # Check for starred expressions (extended unpacking)
-            starred_indices = [
-                i
-                for i, elt in enumerate(target.elts)
-                if isinstance(elt, ast.Starred)
-            ]
-
-            if len(starred_indices) > 1:
-                raise UnsupportedUnpackingError(
-                    "Cannot use multiple starred expressions in assignment"
-                )
-
-            if starred_indices:
-                # Handle starred unpacking
-                star_index = starred_indices[0]
-                starred_target = t.cast(ast.Starred, target.elts[star_index])
-                self._handle_starred_unpacking(
-                    target.elts, value, star_index, starred_target
-                )
-            else:
-                # Standard unpacking without starred expression
-                value_list = list(value)
-                if len(value_list) < len(target.elts):
-                    raise ValueError("Not enough values to unpack")
-                elif len(value_list) > len(target.elts):
-                    raise ValueError("Too many values to unpack")
-
-                # Unpack each element
-                for tgt, val in zip(target.elts, value):
-                    self._handle_unpacking_target(tgt, val)
-        except (TypeError, ValueError) as e:
-            raise UnsupportedUnpackingError(str(e)) from e
-
     def _handle_unpacking_target(self, target: ast.AST, value: t.Any) -> None:
         """Handle different types of unpacking targets.
 
@@ -702,6 +652,123 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             raise UnsupportedUnpackingError(
                 f"Unsupported unpacking target type: {type(target).__name__}"
             )
+
+    def _handle_sequence_unpacking(
+        self,
+        target: ast.Tuple | ast.List,
+        value: t.Any,
+    ) -> None:
+        """Handle sequence (tuple/list) unpacking.
+
+        Args:
+            target: Tuple or List AST node
+            value: Value to unpack
+
+        Raises:
+            ValueError: If value cannot be unpacked
+            UnsupportedUnpackingError: If unpacking pattern is not supported
+        """
+        with ScopeContext(self):
+            try:
+                if not hasattr(value, "__iter__"):
+                    raise ValueError("Cannot unpack non-iterable value")
+
+                # Check for starred expressions (extended unpacking)
+                starred_indices = [
+                    i
+                    for i, elt in enumerate(target.elts)
+                    if isinstance(elt, ast.Starred)
+                ]
+
+                if len(starred_indices) > 1:
+                    raise UnsupportedUnpackingError(
+                        "Cannot use multiple starred expressions in assignment"
+                    )
+
+                if starred_indices:
+                    # Handle starred unpacking
+                    star_index = starred_indices[0]
+                    starred_target = t.cast(
+                        ast.Starred, target.elts[star_index]
+                    )
+                    self._handle_starred_unpacking(
+                        target.elts, value, star_index, starred_target
+                    )
+                else:
+                    # Standard unpacking without starred expression
+                    value_list = list(value)
+                    if len(value_list) < len(target.elts):
+                        raise ValueError("Not enough values to unpack")
+                    elif len(value_list) > len(target.elts):
+                        raise ValueError("Too many values to unpack")
+
+                    # Unpack each element
+                    for tgt, val in zip(target.elts, value):
+                        self._handle_unpacking_target(tgt, val)
+            except (TypeError, ValueError) as e:
+                raise UnsupportedUnpackingError(str(e)) from e
+
+    def _handle_starred_unpacking(
+        self,
+        target_elts: list[ast.expr],
+        value: t.Any,
+        star_index: int,
+        starred_target: ast.Starred,
+    ) -> None:
+        """Handle starred unpacking in sequence assignments.
+
+        Args:
+            target_elts: List of target elements
+            value: Value being unpacked
+            star_index: Index of the starred expression
+            starred_target: The starred target node
+
+        Raises:
+            ValueError: If there are not enough values to unpack
+            UnsupportedUnpackingError: If unpacking pattern is not supported
+        """
+        with ScopeContext(self):
+            iter_value = iter(value)
+
+            # Handle elements before the starred expression
+            before_elements = target_elts[:star_index]
+            for tgt in before_elements:
+                try:
+                    self._handle_unpacking_target(tgt, next(iter_value))
+                except StopIteration as e:
+                    raise ValueError("Not enough values to unpack") from e
+
+            # Collect remaining elements for the starred target
+            starred_values = list(iter_value)
+
+            # Calculate how many elements should be in the starred part
+            after_star_count = len(target_elts) - star_index - 1
+
+            # If there are more elements after the starred part
+            if after_star_count > 0:
+                # Make sure there are enough elements
+                if len(starred_values) < after_star_count:
+                    raise ValueError("Not enough values to unpack")
+
+                # Separate starred values
+                starred_list = starred_values[:-after_star_count]
+                after_star_values = starred_values[-after_star_count:]
+
+                # Assign starred target
+                if isinstance(starred_target.value, ast.Name):
+                    self._set_name_value(starred_target.value.id, starred_list)
+
+                # Assign elements after starred
+                after_elements = target_elts[star_index + 1 :]
+                for tgt, val in zip(after_elements, after_star_values):
+                    self._handle_unpacking_target(tgt, val)
+            else:
+                # If no elements after starred, just assign the rest
+                # to the starred target
+                if isinstance(starred_target.value, ast.Name):
+                    self._set_name_value(
+                        starred_target.value.id, starred_values
+                    )
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> t.Any:
         """Handle named expressions (walrus operator).
@@ -828,37 +895,43 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             raise TypeError(f"Invalid comparison: {str(e)}") from e
 
     def visit_Try(self, node: ast.Try) -> None:
-        try:
-            for stmt in node.body:
-                self.visit(stmt)
-        except Exception as e:
-            handled = False
-            for handler in node.handlers:
-                if handler.type is None:
-                    exc_class = Exception
-                else:
-                    exc_class = self._get_exception_class(handler.type)
+        """Handle try-except-else-finally statements.
 
-                if isinstance(e, exc_class):
-                    handled = True
-                    if handler.name is not None:
-                        self.local_env[handler.name] = e
-                    for stmt in handler.body:
+        Args:
+            node: Try AST node
+        """
+        with ScopeContext(self):
+            try:
+                for stmt in node.body:
+                    self.visit(stmt)
+            except Exception as e:
+                handled = False
+                for handler in node.handlers:
+                    if handler.type is None:
+                        exc_class = Exception
+                    else:
+                        exc_class = self._get_exception_class(handler.type)
+
+                    if isinstance(e, exc_class):
+                        handled = True
+                        if handler.name is not None:
+                            self.local_env[handler.name] = e
+                        for stmt in handler.body:
+                            self.visit(stmt)
+                        if handler.name is not None:
+                            del self.local_env[handler.name]
+                        break
+
+                if not handled:
+                    raise e
+            else:
+                if node.orelse:
+                    for stmt in node.orelse:
                         self.visit(stmt)
-                    if handler.name is not None:
-                        del self.local_env[handler.name]
-                    break
-
-            if not handled:
-                raise e
-        else:
-            if node.orelse:
-                for stmt in node.orelse:
-                    self.visit(stmt)
-        finally:
-            if node.finalbody:
-                for stmt in node.finalbody:
-                    self.visit(stmt)
+            finally:
+                if node.finalbody:
+                    for stmt in node.finalbody:
+                        self.visit(stmt)
 
     def _get_exception_class(self, node: ast.expr) -> t.Type[Exception]:
         if isinstance(node, ast.Name):
@@ -907,83 +980,96 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 )
 
     def visit_With(self, node: ast.With) -> None:
-        """Execute a with statement, properly handling scopes and context
-        managers.
-
-        Args:
-            node: The With statement AST node
-
-        The with statement creates a new scope for its body and properly manages
-        multiple context managers, handling any exceptions that may occur during
-        execution.
         """
-        # Push a new scope for the with block
-        new_scope = Scope()
-        self.scope_stack.append(new_scope)
+        Execute a with statement, properly handling scopes and context managers.
+        """
+        # Create a new scope for the with block
+        scope = Scope()
 
-        # Save current environment state
-        saved_env = self.local_env.copy()
-        with_env = {}  # Environment for variables defined in this with block
+        # Save the current environment
+        outer_env = self.local_env
 
-        # List to track context managers and their values
-        context_managers = []
+        # Create a new environment for the with block
+        self.local_env = {}
+        # Copy only non-local variables from outer environment
+        for name, value in outer_env.items():
+            if name not in scope.locals:
+                self.local_env[name] = value
+
+        self.scope_stack.append(scope)
 
         try:
-            # Enter all context managers in order
-            for item in node.items:
-                try:
-                    # Evaluate the context manager expression
-                    context_manager = self.visit(item.context_expr)
-
-                    try:
-                        # Enter the context manager
-                        value = context_manager.__enter__()
-                        context_managers.append((context_manager, value))
-
-                        # Handle the optional 'as' variable if present
-                        if item.optional_vars is not None:
-                            # Add the 'as' variable to the with block's
-                            # environment
-                            name = self.visit(item.optional_vars)
-                            with_env[name] = value
-                            self.current_scope.locals.add(name)
-                    except Exception as enter_exc:
-                        # If __enter__ fails, properly clean up previous context
-                        # managers
-                        for mgr, _ in reversed(context_managers[:-1]):
-                            try:
-                                mgr.__exit__(None, None, None)
-                            except Exception:
-                                # Ignore any cleanup exceptions
-                                pass
-                        raise enter_exc
-                except Exception as ctx_exc:
-                    # Clean up any successfully entered context managers
-                    self._exit_context_managers(context_managers, ctx_exc)
-                    raise ctx_exc
-
-            # Update local environment with with block's environment
-            self.local_env = {**saved_env, **with_env}
+            # List to track context managers and their values
+            context_managers = []
 
             try:
-                # Execute the body of the with statement
-                for stmt in node.body:
-                    self.visit(stmt)
-            except Exception as body_exc:
-                # Handle any exception from the body
-                if not self._exit_context_managers(context_managers, body_exc):
-                    raise body_exc
-            else:
-                # No exception occurred, exit context managers normally
-                self._exit_context_managers(context_managers, None)
+                # Enter all context managers in order
+                for item in node.items:
+                    try:
+                        # Evaluate the context manager expression using outer
+                        # environment
+                        prev_env = self.local_env
+                        self.local_env = outer_env
+                        try:
+                            context_manager = self.visit(item.context_expr)
+                        finally:
+                            self.local_env = prev_env
+
+                        try:
+                            # Enter the context manager
+                            value = context_manager.__enter__()
+                            context_managers.append((context_manager, value))
+
+                            # Handle the optional 'as' variable if present
+                            if item.optional_vars is not None:
+                                # Add the 'as' variable to the with block's
+                                # environment
+                                name = self.visit(item.optional_vars)
+                                self.local_env[name] = value
+                                scope.locals.add(name)
+                        except Exception as enter_exc:
+                            # If __enter__ fails, properly clean up previous
+                            # context managers
+                            for mgr, _ in reversed(context_managers[:-1]):
+                                try:
+                                    mgr.__exit__(None, None, None)
+                                except Exception:
+                                    # Ignore any cleanup exceptions
+                                    pass
+                            raise enter_exc
+                    except Exception as ctx_exc:
+                        # Clean up any successfully entered context managers
+                        self._exit_context_managers(context_managers, ctx_exc)
+                        raise ctx_exc
+
+                try:
+                    # Execute the body of the with statement
+                    for stmt in node.body:
+                        self.visit(stmt)
+                        # Track any new variables defined in the body
+                        if isinstance(stmt, ast.Assign):
+                            for target in stmt.targets:
+                                if isinstance(target, ast.Name):
+                                    scope.locals.add(target.id)
+                except Exception as body_exc:
+                    # Handle any exception from the body
+                    if not self._exit_context_managers(
+                        context_managers, body_exc
+                    ):
+                        raise body_exc
+                else:
+                    # No exception occurred, exit context managers normally
+                    self._exit_context_managers(context_managers, None)
+            finally:
+                # Update outer environment with modified variables
+                for name, value in self.local_env.items():
+                    if name in outer_env:  # Only update existing variables
+                        outer_env[name] = value
+
+                # Restore the outer environment
+                self.local_env = outer_env
         finally:
-            # Restore the original environment and pop the scope
-            # Only keep variables that were in the original environment
-            self.local_env = {
-                k: v
-                for k, v in self.local_env.items()
-                if k in saved_env or k not in self.current_scope.locals
-            }
+            # Pop the scope
             self.scope_stack.pop()
 
     def _exit_context_managers(
@@ -2322,10 +2408,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             node: The ClassDef AST node
         """
         # Create a new scope for the class definition
-        class_scope = Scope()
-        self.scope_stack.append(class_scope)
-
-        try:
+        with ScopeContext(self):
             # Evaluate base classes
             bases = tuple(self.visit(base) for base in node.bases)
 
@@ -2349,229 +2432,207 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
             # Register the class in the current scope
             self._set_name_value(node.name, class_obj)
-        finally:
-            self.scope_stack.pop()
 
-    if sys.version_info >= (3, 10):
+    def visit_Match(self, node: ast.Match) -> None:
+        """Handle match-case statements.
 
-        def visit_Match(self, node: ast.Match) -> None:
-            """Handle match-case statements.
+        Args:
+            node: Match AST node
 
-            Args:
-                node: Match AST node
+        Example:
+            match value:
+                case 1:
+                    ...
+                case [x, y]:
+                    ...
+                case {"key": value}:
+                    ...
+                case _:
+                    ...
+        """
+        # Evaluate the subject expression
+        subject = self.visit(node.subject)
 
-            Example:
-                match value:
-                    case 1:
-                        ...
-                    case [x, y]:
-                        ...
-                    case {"key": value}:
-                        ...
-                    case _:
-                        ...
-            """
-            # Evaluate the subject expression
-            subject = self.visit(node.subject)
+        # Create a new scope for pattern matching
+        with ScopeContext(self):
+            # Try each case in order
+            for case in node.cases:
+                pattern = case.pattern
 
-            # Create a new scope for pattern matching
-            match_scope = Scope()
-            self.scope_stack.append(match_scope)
+                # Create a temporary scope for pattern matching
+                with ScopeContext(self):
+                    if self._match_pattern(pattern, subject):
+                        # If there's a guard, evaluate it
+                        if case.guard is not None:
+                            guard_result = self.visit(case.guard)
+                            if not guard_result:
+                                continue
 
-            try:
-                # Try each case in order
-                for case in node.cases:
-                    pattern = case.pattern
+                        # Copy matched variables from temp scope to match scope
+                        for name in self.current_scope.locals:
+                            if name in self.local_env:
+                                self._set_name_value(name, self.local_env[name])
 
-                    # Create a temporary scope for pattern matching
-                    temp_scope = Scope()
-                    self.scope_stack.append(temp_scope)
+                        # Execute the case body
+                        for stmt in case.body:
+                            self.visit(stmt)
+                        return
 
-                    try:
-                        if self._match_pattern(pattern, subject):
-                            # If there's a guard, evaluate it
-                            if case.guard is not None:
-                                guard_result = self.visit(case.guard)
-                                if not guard_result:
-                                    continue
+    def _match_pattern(
+        self,
+        pattern: ast.pattern,
+        value: t.Any,
+    ) -> bool:
+        """Match a pattern against a value.
 
-                            # Copy matched variables from temp scope to match
-                            # scope
-                            for name in temp_scope.locals:
-                                if name in self.local_env:
-                                    self._set_name_value(
-                                        name, self.local_env[name]
-                                    )
+        Args:
+            pattern: Pattern AST node
+            value: Value to match against
 
-                            # Execute the case body
-                            for stmt in case.body:
-                                self.visit(stmt)
-                            return
-                    finally:
-                        self.scope_stack.pop()
-            finally:
-                self.scope_stack.pop()
-
-        def _match_pattern(
-            self,
-            pattern: ast.pattern,
-            value: t.Any,
-        ) -> bool:
-            """Match a pattern against a value.
-
-            Args:
-                pattern: Pattern AST node
-                value: Value to match against
-
-            Returns:
-                bool: Whether the pattern matches the value
-            """
-            if isinstance(pattern, ast.MatchValue):
-                # Literal pattern: case 1: or case "string": etc.
-                pattern_value = self.visit(pattern.value)
-                return (
-                    type(value) is type(pattern_value)
-                    and value == pattern_value
-                )
-            elif isinstance(pattern, ast.MatchSingleton):
-                # Singleton pattern: case None: or case True: etc.
-                return value is pattern.value
-            elif isinstance(pattern, ast.MatchSequence):
-                # Sequence pattern: case [x, y]:
-                if not isinstance(value, (list, tuple)):
-                    return False
-
-                # Handle star patterns
-                star_idx = -1
-                for i, p in enumerate(pattern.patterns):
-                    if isinstance(p, ast.MatchStar):
-                        star_idx = i
-                        break
-
-                if star_idx == -1:
-                    # No star pattern
-                    if len(pattern.patterns) != len(value):
-                        return False
-                    # Match each element
-                    for p, v in zip(pattern.patterns, value):
-                        if not self._match_pattern(p, v):
-                            return False
-                    return True
-                else:
-                    # Has star pattern
-                    if len(value) < len(pattern.patterns) - 1:
-                        return False
-                    # Match patterns before star
-                    for p, v in zip(
-                        pattern.patterns[:star_idx], value[:star_idx]
-                    ):
-                        if not self._match_pattern(p, v):
-                            return False
-
-                    # Match patterns after star
-                    remaining_count = len(pattern.patterns) - star_idx - 1
-                    for p, v in zip(
-                        pattern.patterns[star_idx + 1 :],
-                        value[-remaining_count:] if remaining_count > 0 else [],
-                    ):
-                        if not self._match_pattern(p, v):
-                            return False
-
-                    # Bind star pattern if it has a name
-                    star_pattern = pattern.patterns[star_idx]
-                    if (
-                        isinstance(star_pattern, ast.MatchStar)
-                        and star_pattern.name
-                    ):
-                        star_value = (
-                            list(value[star_idx:-remaining_count])
-                            if remaining_count > 0
-                            else list(value[star_idx:])
-                        )
-                        self._set_name_value(star_pattern.name, star_value)
-                        self.current_scope.locals.add(star_pattern.name)
-
-                    return True
-            elif isinstance(pattern, ast.MatchMapping):
-                # Mapping pattern: case {"key": value}:
-                if not isinstance(value, dict):
-                    return False
-
-                # Check if all required keys are present
-                for key in pattern.keys:
-                    key_value = self.visit(key)
-                    if key_value not in value:
-                        return False
-
-                # Match each key-pattern pair
-                for key, pat in zip(pattern.keys, pattern.patterns):
-                    key_value = self.visit(key)
-                    if not self._match_pattern(pat, value[key_value]):
-                        return False
-
-                # Handle rest pattern if present
-                if pattern.rest is not None:
-                    rest_dict = {
-                        k: v
-                        for k, v in value.items()
-                        if not any(self.visit(key) == k for key in pattern.keys)
-                    }
-                    self._set_name_value(pattern.rest, rest_dict)
-                    self.current_scope.locals.add(pattern.rest)
-
-                return True
-            elif isinstance(pattern, ast.MatchStar):
-                # Star pattern: case [x, *rest, y]:
-                # This is handled by MatchSequence
-                if pattern.name is not None:
-                    self._set_name_value(pattern.name, value)
-                    self.current_scope.locals.add(pattern.name)
-                return True
-            elif isinstance(pattern, ast.MatchAs):
-                # AS pattern: case x: or case [x] as lst:
-                if pattern.pattern is not None:
-                    if not self._match_pattern(pattern.pattern, value):
-                        return False
-                if pattern.name is not None:
-                    self._set_name_value(pattern.name, value)
-                    self.current_scope.locals.add(pattern.name)
-                return True
-            elif isinstance(pattern, ast.MatchOr):
-                # OR pattern: case 1 | 2 | 3:
-                for p in pattern.patterns:
-                    # Create a temporary scope for each OR pattern
-                    # to avoid variable binding conflicts
-                    temp_scope = Scope()
-                    self.scope_stack.append(temp_scope)
-                    try:
-                        if self._match_pattern(p, value):
-                            return True
-                    finally:
-                        self.scope_stack.pop()
+        Returns:
+            bool: Whether the pattern matches the value
+        """
+        if isinstance(pattern, ast.MatchValue):
+            # Literal pattern: case 1: or case "string": etc.
+            pattern_value = self.visit(pattern.value)
+            return type(value) is type(pattern_value) and value == pattern_value
+        elif isinstance(pattern, ast.MatchSingleton):
+            # Singleton pattern: case None: or case True: etc.
+            return value is pattern.value
+        elif isinstance(pattern, ast.MatchSequence):
+            # Sequence pattern: case [x, y]:
+            if not isinstance(value, (list, tuple)):
                 return False
-            elif isinstance(pattern, ast.MatchClass):
-                # Class pattern: case Point(x, y):
-                cls = self.visit(pattern.cls)
-                if not isinstance(value, cls):
+
+            # Handle star patterns
+            star_idx = -1
+            for i, p in enumerate(pattern.patterns):
+                if isinstance(p, ast.MatchStar):
+                    star_idx = i
+                    break
+
+            if star_idx == -1:
+                # No star pattern
+                if len(pattern.patterns) != len(value):
                     return False
-
-                # Get positional attributes from __match_args__
-                match_args = getattr(cls, "__match_args__", ())
-                if len(pattern.patterns) > len(match_args):
+                # Match each element
+                for p, v in zip(pattern.patterns, value):
+                    if not self._match_pattern(p, v):
+                        return False
+                return True
+            else:
+                # Has star pattern
+                if len(value) < len(pattern.patterns) - 1:
                     return False
-
-                # Match positional patterns
-                for pat, attr_name in zip(pattern.patterns, match_args):
-                    if not self._match_pattern(pat, getattr(value, attr_name)):
+                # Match patterns before star
+                for p, v in zip(pattern.patterns[:star_idx], value[:star_idx]):
+                    if not self._match_pattern(p, v):
                         return False
 
-                # Match keyword patterns
-                for name, pat in zip(pattern.kwd_attrs, pattern.kwd_patterns):
-                    if not hasattr(value, name):
+                # Match patterns after star
+                remaining_count = len(pattern.patterns) - star_idx - 1
+                for p, v in zip(
+                    pattern.patterns[star_idx + 1 :],
+                    value[-remaining_count:] if remaining_count > 0 else [],
+                ):
+                    if not self._match_pattern(p, v):
                         return False
-                    if not self._match_pattern(pat, getattr(value, name)):
-                        return False
+
+                # Bind star pattern if it has a name
+                star_pattern = pattern.patterns[star_idx]
+                if (
+                    isinstance(star_pattern, ast.MatchStar)
+                    and star_pattern.name
+                ):
+                    star_value = (
+                        list(value[star_idx:-remaining_count])
+                        if remaining_count > 0
+                        else list(value[star_idx:])
+                    )
+                    self._set_name_value(star_pattern.name, star_value)
+                    self.current_scope.locals.add(star_pattern.name)
 
                 return True
+        elif isinstance(pattern, ast.MatchMapping):
+            # Mapping pattern: case {"key": value}:
+            if not isinstance(value, dict):
+                return False
 
+            # Check if all required keys are present
+            for key in pattern.keys:
+                key_value = self.visit(key)
+                if key_value not in value:
+                    return False
+
+            # Match each key-pattern pair
+            for key, pat in zip(pattern.keys, pattern.patterns):
+                key_value = self.visit(key)
+                if not self._match_pattern(pat, value[key_value]):
+                    return False
+
+            # Handle rest pattern if present
+            if pattern.rest is not None:
+                rest_dict = {
+                    k: v
+                    for k, v in value.items()
+                    if not any(self.visit(key) == k for key in pattern.keys)
+                }
+                self._set_name_value(pattern.rest, rest_dict)
+                self.current_scope.locals.add(pattern.rest)
+
+            return True
+        elif isinstance(pattern, ast.MatchStar):
+            # Star pattern: case [x, *rest, y]:
+            # This is handled by MatchSequence
+            if pattern.name is not None:
+                self._set_name_value(pattern.name, value)
+                self.current_scope.locals.add(pattern.name)
+            return True
+        elif isinstance(pattern, ast.MatchAs):
+            # AS pattern: case x: or case [x] as lst:
+            if pattern.pattern is not None:
+                if not self._match_pattern(pattern.pattern, value):
+                    return False
+            if pattern.name is not None:
+                self._set_name_value(pattern.name, value)
+                self.current_scope.locals.add(pattern.name)
+            return True
+        elif isinstance(pattern, ast.MatchOr):
+            # OR pattern: case 1 | 2 | 3:
+            for p in pattern.patterns:
+                # Create a temporary scope for each OR pattern
+                # to avoid variable binding conflicts
+                temp_scope = Scope()
+                self.scope_stack.append(temp_scope)
+                try:
+                    if self._match_pattern(p, value):
+                        return True
+                finally:
+                    self.scope_stack.pop()
             return False
+        elif isinstance(pattern, ast.MatchClass):
+            # Class pattern: case Point(x, y):
+            cls = self.visit(pattern.cls)
+            if not isinstance(value, cls):
+                return False
+
+            # Get positional attributes from __match_args__
+            match_args = getattr(cls, "__match_args__", ())
+            if len(pattern.patterns) > len(match_args):
+                return False
+
+            # Match positional patterns
+            for pat, attr_name in zip(pattern.patterns, match_args):
+                if not self._match_pattern(pat, getattr(value, attr_name)):
+                    return False
+
+            # Match keyword patterns
+            for name, pat in zip(pattern.kwd_attrs, pattern.kwd_patterns):
+                if not hasattr(value, name):
+                    return False
+                if not self._match_pattern(pat, getattr(value, name)):
+                    return False
+
+            return True
+
+        return False

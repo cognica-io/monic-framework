@@ -12,7 +12,7 @@ import typing as t
 class NamespaceProxy:
     """Proxy object for accessing nested namespaces."""
 
-    def __init__(self, namespace: t.Dict[str, t.Any]) -> None:
+    def __init__(self, namespace: dict[str, t.Any]) -> None:
         self._namespace = namespace
 
     def __getattr__(self, name: str) -> t.Any:
@@ -33,14 +33,14 @@ class Registry:
 
     def reset(self) -> None:
         """Reset the registry to its initial state."""
-        self._objects: t.Dict[str, t.Any] = {}
-        self._modules: t.Dict[str, types.ModuleType] = {}
+        self._objects: dict[str, t.Any] = {}
+        self._modules: dict[str, types.ModuleType] = {}
 
     def _register_in_namespace(
         self,
         name: str,
         obj: t.Any,
-        namespace: t.Dict[str, t.Any],
+        namespace: dict[str, t.Any],
     ) -> None:
         """Register an object in the given namespace, supporting nested names.
 
@@ -92,8 +92,8 @@ class Registry:
             namespace[name] = obj
 
     def register(
-        self, name_or_func: t.Optional[t.Union[str, t.Callable]] = None
-    ) -> t.Union[t.Callable[[t.Any], t.Any], t.Any]:
+        self, name_or_func: str | t.Callable | None = None
+    ) -> t.Callable[[t.Any], t.Any] | t.Any:
         """Register an object with a given name.
 
         This decorator can be used in two ways:
@@ -128,7 +128,7 @@ class Registry:
 
         return decorator
 
-    def is_registered(self, name_or_obj: t.Union[str, t.Any]) -> bool:
+    def is_registered(self, name_or_obj: str | t.Any) -> bool:
         """Check if an object is registered.
 
         Args:
@@ -193,7 +193,7 @@ class Registry:
         return obj
 
     def register_module(
-        self, module_name: str, alias: t.Optional[str] = None
+        self, module_name: str, alias: str | None = None
     ) -> types.ModuleType:
         """Register a Python module in the registry.
 
@@ -234,14 +234,14 @@ class Registry:
 
         return module
 
-    def get_all(self) -> t.Dict[str, t.Any]:
+    def get_all(self) -> dict[str, t.Any]:
         """Get all registered objects and modules.
 
         Returns:
             Dictionary of registered objects and modules, with nested namespaces
             wrapped in NamespaceProxy objects.
         """
-        result: t.Dict[str, t.Any] = {}
+        result: dict[str, t.Any] = {}
         for name, value in self._objects.items():
             if isinstance(value, dict):
                 result[name] = NamespaceProxy(value)
