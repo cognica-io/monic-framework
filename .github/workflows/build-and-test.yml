@@ -28,6 +28,10 @@ jobs:
         pip install -r requirements-tests.txt
         pip install -r requirements-dev.txt
 
+    - name: Install Monic Framework
+      run: |
+        pip install -e .
+
     - name: Run tests with coverage
       run: |
         pytest --cov=monic tests/
