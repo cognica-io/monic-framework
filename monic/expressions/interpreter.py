@@ -1785,6 +1785,18 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 else None
             )
             return value[start:stop:step]
+        elif (
+            isinstance(node.slice, ast.Constant)
+            and node.slice.value is Ellipsis
+        ):
+            # Handle ellipsis subscript (lst[...]) by returning the entire list
+            if isinstance(value, list):
+                return value[:]
+            else:
+                raise TypeError(
+                    f"'{type(value).__name__}' object does not support "
+                    "ellipsis indexing"
+                )
         else:
             # For Python >= 3.9, node.slice can be other expression nodes
             slice_val = self.visit(node.slice)
