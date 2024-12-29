@@ -52,14 +52,14 @@ def test_unpacking_errors():
     # Test too many values to unpack
     with pytest.raises(
         UnsupportedUnpackingError,
-        match="Runtime error: Not enough values to unpack",
+        match="Not enough values to unpack",
     ):
         interpreter.execute(parser.parse("a, b, c = [1, 2]"))
 
     # Test too few values to unpack
     with pytest.raises(
         UnsupportedUnpackingError,
-        match="Runtime error: Too many values to unpack",
+        match="Too many values to unpack",
     ):
         interpreter.execute(parser.parse("a, b = [1, 2, 3]"))
 
