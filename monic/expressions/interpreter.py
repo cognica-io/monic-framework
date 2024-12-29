@@ -1446,6 +1446,79 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Handle normal functions
         return func(*pos_args, **kwargs)
 
+    def visit_GeneratorExp(
+        self, node: ast.GeneratorExp
+    ) -> t.Generator[t.Any, None, None]:
+        """Handle generator expressions.
+
+        Args:
+            node: GeneratorExp AST node
+
+        Returns:
+            A generator object
+        """
+        # Create new scope for the generator expression
+        gen_scope = Scope()
+        self.scope_stack.append(gen_scope)
+
+        # Copy the outer environment
+        outer_env = self.local_env
+        self.local_env = outer_env.copy()
+
+        try:
+            def generator() -> t.Generator[t.Any, None, None]:
+                def process_generator(
+                    generators: list, index: int = 0
+                ) -> t.Generator[t.Any, None, None]:
+                    if index >= len(generators):
+                        # Base case: all generators processed, yield element
+                        value = self.visit(node.elt)
+                        yield value
+                        return
+
+                    generator = generators[index]
+                    iter_obj = self.visit(generator.iter)
+
+                    # Save the current environment before processing this
+                    # generator
+                    current_env = self.local_env.copy()
+
+                    for item in iter_obj:
+                        # Restore environment from before this generator's loop
+                        self.local_env = current_env.copy()
+
+                        try:
+                            self._handle_unpacking_target(
+                                generator.target, item
+                            )
+                        except UnsupportedUnpackingError:
+                            if isinstance(generator.target, ast.Name):
+                                self._set_name_value(generator.target.id, item)
+                            else:
+                                raise
+
+                        # Check if conditions
+                        if all(
+                            self.visit(if_clause) for if_clause in generator.ifs
+                        ):
+                            # Process next generator or yield result
+                            yield from process_generator(generators, index + 1)
+
+                        # Update outer environment with any named expression
+                        # bindings
+                        for name, value in self.local_env.items():
+                            if name not in current_env:
+                                outer_env[name] = value
+
+                # Start processing generators recursively
+                yield from process_generator(node.generators)
+
+            return generator()
+        finally:
+            # Restore the outer environment and pop the scope
+            self.local_env = outer_env
+            self.scope_stack.pop()
+
     def visit_List(self, node: ast.List) -> list:
         return [self.visit(elt) for elt in node.elts]
 
@@ -1515,9 +1588,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         self.local_env = outer_env.copy()
 
         try:
-            result = []
+            result: list[t.Any] = []
 
-            def process_generator(generators: list, index: int = 0):
+            def process_generator(generators: list, index: int = 0) -> None:
                 if index >= len(generators):
                     # Base case: all generators processed, evaluate element
                     value = self.visit(node.elt)
@@ -1543,15 +1616,13 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             raise
 
                     # Check if conditions
-                    # Named expressions in conditions should affect outer scope
                     if all(
                         self.visit(if_clause) for if_clause in generator.ifs
                     ):
                         # Process next generator or append result
                         process_generator(generators, index + 1)
 
-                    # Update outer environment with any named expression
-                    # bindings
+                    # Update outer environment with any named expression bindings
                     for name, value in self.local_env.items():
                         if name not in current_env:
                             outer_env[name] = value
