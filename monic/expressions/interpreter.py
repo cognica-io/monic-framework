@@ -8,6 +8,7 @@
 # pylint: disable=too-many-branches,too-many-return-statements,too-many-locals
 # pylint: disable=too-many-public-methods,too-many-instance-attributes
 # pylint: disable=too-many-statements,too-many-nested-blocks,too-many-lines
+# pylint: disable=too-many-arguments
 # pylint: disable=unnecessary-dunder-call
 
 import ast
@@ -61,8 +62,12 @@ class ControlFlow:
     loop_depth: int = 0
 
 
+# Type variable for comprehension result types
+T = t.TypeVar("T", list, set)
+
+
 class ExpressionsInterpreter(ast.NodeVisitor):
-    def __init__(self, context: t.Optional[ExpressionsContext] = None) -> None:
+    def __init__(self, context: ExpressionsContext | None = None) -> None:
         """Initialize the interpreter.
 
         Args:
@@ -71,11 +76,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         self.started_at = time.monotonic()
 
         self.context = context or ExpressionsContext()
-        self.scope_stack: t.List[Scope] = [Scope()]  # Track scopes
+        self.scope_stack: list[Scope] = [Scope()]  # Track scopes
         self.control: ControlFlow = ControlFlow()
 
         # Initialize with built-in environment
-        self.global_env: t.Dict[str, t.Any] = {
+        self.global_env: dict[str, t.Any] = {
             # Built-in functions
             "print": print,
             "len": len,
@@ -142,7 +147,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             }
         )
 
-        self.local_env: t.Dict[str, t.Any] = {}
+        self.local_env: dict[str, t.Any] = {}
 
         # Initialize last result storage
         self.global_env["_"] = None
@@ -1081,25 +1086,178 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         finally:
             self.control.loop_depth -= 1
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        """
-        Handle function definition with support for named parameters, defaults,
-        keyword-only, *args, and **kwargs.
-        """
-        def_scope = Scope()
-        self.scope_stack.append(def_scope)
+    def _validate_nonlocal_declarations(
+        self, body: t.Sequence[ast.stmt], scope_stack: list[Scope]
+    ) -> None:
+        """Validate nonlocal declarations in function body.
 
-        try:
-            # Validate nonlocal declarations at function definition time
-            for stmt in node.body:
-                if isinstance(stmt, ast.Nonlocal):
-                    if len(self.scope_stack) < 2:
-                        raise SyntaxError(
-                            "nonlocal declaration not allowed at module level"
-                        )
-                    # For non-nested functions, check bindings at definition
-                    # time
-                    if len(self.scope_stack) == 2:  # Only one outer scope
+        Args:
+            body: Function body AST nodes
+            scope_stack: Current scope stack
+
+        Raises:
+            SyntaxError: If nonlocal declaration is invalid
+        """
+        for stmt in body:
+            if isinstance(stmt, ast.Nonlocal):
+                if len(scope_stack) < 2:
+                    raise SyntaxError(
+                        "nonlocal declaration not allowed at module level"
+                    )
+
+                # For non-nested functions, check bindings at definition time
+                if len(scope_stack) == 2:  # Only one outer scope
+                    for name in stmt.names:
+                        found = False
+                        # Check all outer scopes (excluding the current scope)
+                        for scope in reversed(scope_stack[:-1]):
+                            if (
+                                name in scope.locals
+                                or name in scope.nonlocals
+                                or name in self.local_env
+                            ):
+                                found = True
+                                break
+                        if not found:
+                            raise SyntaxError(
+                                f"No binding for nonlocal '{name}' found "
+                                "in outer scopes"
+                            )
+
+    def _process_function_parameters(
+        self,
+        func_name: str,
+        call_args: tuple[t.Any, ...],
+        call_kwargs: dict[str, t.Any],
+        positional_params: list[ast.arg],
+        defaults: list[t.Any],
+        required_count: int,
+        kwonly_params: list[ast.arg],
+        kw_defaults: list[t.Any | None],
+        vararg: ast.arg | None,
+        kwarg: ast.arg | None,
+    ) -> None:
+        """Process and bind function parameters to arguments.
+
+        Args:
+            func_name: Name of the function being called
+            call_args: Positional arguments tuple
+            call_kwargs: Keyword arguments dictionary
+            positional_params: List of positional parameter AST nodes
+            defaults: List of default values for positional parameters
+            required_count: Number of required positional parameters
+            kwonly_params: List of keyword-only parameter AST nodes
+            kw_defaults: List of default values for keyword-only parameters
+            vararg: *args parameter AST node if present
+            kwarg: **kwargs parameter AST node if present
+
+        Raises:
+            TypeError: If argument binding fails
+        """
+        # 1) Bind positional
+        bound_args_count = min(len(call_args), len(positional_params))
+        for i in range(bound_args_count):
+            param = positional_params[i]
+            self._set_name_value(param.arg, call_args[i])
+
+        # leftover positional -> defaults or error
+        for i in range(bound_args_count, len(positional_params)):
+            param = positional_params[i]
+            param_name = param.arg
+
+            if i < required_count:
+                # This param must be provided either by leftover call_args
+                # (already exhausted) or by a keyword
+                if param_name in call_kwargs:
+                    self._set_name_value(
+                        param_name, call_kwargs.pop(param_name)
+                    )
+                else:
+                    raise TypeError(
+                        f"{func_name}() missing required positional argument: "
+                        f"'{param_name}'"
+                    )
+            else:
+                # This param has a default
+                default_index = i - required_count
+                if param_name in call_kwargs:
+                    # Use the user-provided keyword
+                    self._set_name_value(
+                        param_name, call_kwargs.pop(param_name)
+                    )
+                else:
+                    # Use the default
+                    self._set_name_value(param_name, defaults[default_index])
+
+        # 2) Handle keyword-only params
+        for i, kw_param in enumerate(kwonly_params):
+            pname = kw_param.arg
+            if pname in call_kwargs:
+                self._set_name_value(pname, call_kwargs.pop(pname))
+            else:
+                # if there's a default => use it; else error
+                if kw_defaults[i] is not None:
+                    self._set_name_value(pname, kw_defaults[i])
+                else:
+                    raise TypeError(
+                        f"{func_name}() missing required keyword-only "
+                        f"argument: '{pname}'"
+                    )
+
+        # 3) Handle *args
+        if vararg:
+            vararg_name = vararg.arg
+            leftover = call_args[len(positional_params) :]
+            self._set_name_value(vararg_name, leftover)
+        else:
+            # If no vararg, but user gave extra positional => error
+            if len(call_args) > len(positional_params):
+                raise TypeError(
+                    f"{func_name}() takes {len(positional_params)} positional "
+                    f"arguments but {len(call_args)} were given"
+                )
+
+        # 4) Handle **kwargs
+        if kwarg:
+            kwarg_name = kwarg.arg
+            self._set_name_value(kwarg_name, call_kwargs)
+        else:
+            if call_kwargs:
+                first_unexpected = next(iter(call_kwargs))
+                raise TypeError(
+                    f"{func_name}() got an unexpected keyword argument: "
+                    f"'{first_unexpected}'"
+                )
+
+    def _create_function_closure(
+        self,
+        func_def: ast.FunctionDef,
+        outer_env: dict[str, t.Any],
+        closure_env: dict[str, t.Any],
+        defaults: list[t.Any],
+        kw_defaults: list[t.Any | None],
+        required_count: int,
+    ) -> t.Callable[..., t.Any]:
+        """Create a closure for the function definition."""
+
+        def func(*call_args, **call_kwargs):
+            # Create a new execution scope
+            func_scope = Scope()
+            self.scope_stack.append(func_scope)
+
+            prev_env = self.local_env
+            # Build local env from outer + closure
+            self.local_env = {**outer_env, **closure_env}
+
+            self.control.function_depth += 1
+
+            try:
+                # Register the function name itself for recursion
+                self.local_env[func_def.name] = func
+
+                # Process nonlocal declarations at function execution time
+                for stmt in func_def.body:
+                    if isinstance(stmt, ast.Nonlocal):
                         for name in stmt.names:
                             found = False
                             # Check all outer scopes
@@ -1114,9 +1272,58 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                                     break
                             if not found:
                                 raise SyntaxError(
-                                    f"No binding for nonlocal '{name}' "
-                                    "found in outer scopes"
+                                    f"No binding for nonlocal '{name}' found "
+                                    "in outer scopes"
                                 )
+                            # Mark this name as nonlocal in the current scope
+                            self.current_scope.nonlocals.add(name)
+
+                # Process function parameters
+                self._process_function_parameters(
+                    func_def.name,
+                    call_args,
+                    call_kwargs,
+                    func_def.args.args,
+                    defaults,
+                    required_count,
+                    func_def.args.kwonlyargs,
+                    kw_defaults,
+                    func_def.args.vararg,
+                    func_def.args.kwarg,
+                )
+
+                # Execute function body
+                try:
+                    for stmt in func_def.body:
+                        self.visit(stmt)
+                    return None
+                except ReturnValue as rv:
+                    return rv.value
+            finally:
+                self.control.function_depth -= 1
+
+                # Update nonlocals
+                for name in func_scope.nonlocals:
+                    if name in self.local_env:
+                        closure_env[name] = self.local_env[name]
+                        outer_env[name] = self.local_env[name]
+
+                self.local_env = prev_env
+                self.scope_stack.pop()
+
+        return func
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        """
+        Handle function definition with support for named parameters, defaults,
+        keyword-only, *args, and **kwargs.
+        """
+        def_scope = Scope()
+        self.scope_stack.append(def_scope)
+
+        try:
+            # Validate nonlocal declarations at function definition time
+            self._validate_nonlocal_declarations(node.body, self.scope_stack)
 
             closure_env: t.Dict[str, t.Any] = {}
             outer_env: t.Dict[str, t.Any] = self.local_env
@@ -1128,179 +1335,47 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 for d in node.args.kw_defaults
             ]
 
-            # e.g. if we have 3 positional params and 1 default
-            # => required_count=2
+            # e.g. if we have 3 positional params and 1 default then
+            # required_count=2
             required_count = len(node.args.args) - len(defaults)
 
-            def func(*call_args, **call_kwargs):
-                # Create a new execution scope
-                func_scope = Scope()
-                self.scope_stack.append(func_scope)
-
-                prev_env = self.local_env
-                # Build local env from outer + closure
-                self.local_env = {**outer_env, **closure_env}
-
-                self.control.function_depth += 1
-
-                try:
-                    # Register the function name itself for recursion
-                    self.local_env[node.name] = func
-
-                    # Process nonlocal declarations at function execution time
-                    for stmt in node.body:
-                        if isinstance(stmt, ast.Nonlocal):
-                            for name in stmt.names:
-                                found = False
-                                # Check all outer scopes
-                                # (excluding the current scope)
-                                for scope in reversed(self.scope_stack[:-1]):
-                                    if (
-                                        name in scope.locals
-                                        or name in scope.nonlocals
-                                        or name in self.local_env
-                                    ):
-                                        found = True
-                                        break
-                                if not found:
-                                    raise SyntaxError(
-                                        f"No binding for nonlocal '{name}' "
-                                        "found in outer scopes"
-                                    )
-                                # Mark this name as nonlocal in the current
-                                # scope
-                                self.current_scope.nonlocals.add(name)
-
-                    ###############################
-                    # 1) Bind the "regular" positional params
-                    ###############################
-                    positional_params = node.args.args
-                    bound_args_count = min(
-                        len(call_args), len(positional_params)
-                    )
-
-                    # First, match positional_args with call_args 1:1 from the
-                    # front
-                    for i in range(bound_args_count):
-                        param = positional_params[i]
-                        self._set_name_value(param.arg, call_args[i])
-
-                    # Then, for leftover positional params, we check defaults
-                    # or keywords
-                    for i in range(bound_args_count, len(positional_params)):
-                        param = positional_params[i]
-                        param_name = param.arg
-
-                        if i < required_count:
-                            # This param must be provided either by leftover
-                            # call_args (already exhausted) or by a keyword
-                            if param_name in call_kwargs:
-                                self._set_name_value(
-                                    param_name, call_kwargs.pop(param_name)
-                                )
-                            else:
-                                raise TypeError(
-                                    f"{node.name}() missing required positional"
-                                    f" argument: '{param_name}'"
-                                )
-                        else:
-                            # This param has a default
-                            default_index = i - required_count
-                            if param_name in call_kwargs:
-                                # Use the user-provided keyword
-                                self._set_name_value(
-                                    param_name, call_kwargs.pop(param_name)
-                                )
-                            else:
-                                # Use the default
-                                self._set_name_value(
-                                    param_name, defaults[default_index]
-                                )
-
-                    ###############################
-                    # 2) Handle keyword-only params
-                    ###############################
-                    # e.g. def func(x, *, y=10, z)
-                    kwonly_params = node.args.kwonlyargs
-                    for i, kw_param in enumerate(kwonly_params):
-                        pname = kw_param.arg
-                        if pname in call_kwargs:
-                            self._set_name_value(pname, call_kwargs.pop(pname))
-                        else:
-                            # if there's a default => use it; else error
-                            if kw_defaults[i] is not None:
-                                self._set_name_value(pname, kw_defaults[i])
-                            else:
-                                raise TypeError(
-                                    f"{node.name}() missing required "
-                                    f"keyword-only argument: '{pname}'"
-                                )
-
-                    ###############################
-                    # 3) *args (vararg)
-                    ###############################
-                    if node.args.vararg:
-                        vararg_name = node.args.vararg.arg
-                        leftover = call_args[len(positional_params) :]
-                        self._set_name_value(vararg_name, leftover)
-                    else:
-                        # If no vararg, but user gave extra positional => error
-                        if len(call_args) > len(positional_params):
-                            raise TypeError(
-                                f"{node.name}() takes {len(positional_params)} "
-                                f"positional arguments but {len(call_args)} "
-                                f"were given"
-                            )
-
-                    ###############################
-                    # 4) **kwargs
-                    ###############################
-                    if node.args.kwarg:
-                        kwarg_name = node.args.kwarg.arg
-                        self._set_name_value(kwarg_name, call_kwargs)
-                    else:
-                        if call_kwargs:
-                            first_unexpected = next(iter(call_kwargs))
-                            raise TypeError(
-                                f"{node.name}() got an unexpected keyword "
-                                f"argument: '{first_unexpected}'"
-                            )
-
-                    ###############################
-                    # 5) Execute function body
-                    ###############################
-                    try:
-                        for stmt in node.body:
-                            self.visit(stmt)
-                        return None
-                    except ReturnValue as rv:
-                        return rv.value
-                finally:
-                    self.control.function_depth -= 1
-
-                    # Update nonlocals
-                    for name in func_scope.nonlocals:
-                        if name in self.local_env:
-                            closure_env[name] = self.local_env[name]
-                            outer_env[name] = self.local_env[name]
-
-                    self.local_env = prev_env
-                    self.scope_stack.pop()
+            # Create the function closure
+            func = self._create_function_closure(
+                func_def=node,
+                outer_env=outer_env,
+                closure_env=closure_env,
+                defaults=defaults,
+                kw_defaults=kw_defaults,
+                required_count=required_count,
+            )
 
             # Register the function in the current scope
             self._set_name_value(node.name, func)
         finally:
             self.scope_stack.pop()
 
-    def visit_Lambda(self, node: ast.Lambda) -> t.Callable:
-        closure_env: t.Dict[str, t.Any] = {}
-        outer_env: t.Dict[str, t.Any] = self.local_env
+    def _create_lambda_closure(
+        self,
+        node: ast.Lambda,
+        outer_env: dict[str, t.Any],
+        closure_env: dict[str, t.Any],
+        defaults: list[t.Any],
+        kw_defaults: list[t.Any | None],
+        required_count: int,
+    ) -> t.Callable[..., t.Any]:
+        """Create a closure for the lambda function.
 
-        defaults = [self.visit(d) for d in node.args.defaults]
-        kw_defaults = [
-            None if d is None else self.visit(d) for d in node.args.kw_defaults
-        ]
-        required_count = len(node.args.args) - len(defaults)
+        Args:
+            node: Lambda AST node
+            outer_env: Outer environment dictionary
+            closure_env: Closure environment dictionary
+            defaults: List of default values for positional parameters
+            kw_defaults: List of default values for keyword-only parameters
+            required_count: Number of required positional parameters
+
+        Returns:
+            The created lambda closure
+        """
 
         def lambda_func(*call_args, **call_kwargs):
             lambda_scope = Scope()
@@ -1310,74 +1385,21 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             self.local_env = {**outer_env, **closure_env}
 
             try:
-                # 1) Bind positional
-                positional_params = node.args.args
-                bound_args_count = min(len(call_args), len(positional_params))
-                for i in range(bound_args_count):
-                    param = positional_params[i]
-                    self._set_name_value(param.arg, call_args[i])
+                # Process function parameters
+                self._process_function_parameters(
+                    "<lambda>",
+                    call_args,
+                    call_kwargs,
+                    node.args.args,
+                    defaults,
+                    required_count,
+                    node.args.kwonlyargs,
+                    kw_defaults,
+                    node.args.vararg,
+                    node.args.kwarg,
+                )
 
-                # leftover positional -> defaults or error
-                for i in range(bound_args_count, len(positional_params)):
-                    param = positional_params[i]
-                    pname = param.arg
-                    if i < required_count:
-                        # must come from keyword
-                        if pname in call_kwargs:
-                            self._set_name_value(pname, call_kwargs.pop(pname))
-                        else:
-                            raise TypeError(
-                                "Lambda missing required positional argument: "
-                                f"'{pname}'"
-                            )
-                    else:
-                        # default
-                        d_index = i - required_count
-                        if pname in call_kwargs:
-                            self._set_name_value(pname, call_kwargs.pop(pname))
-                        else:
-                            self._set_name_value(pname, defaults[d_index])
-
-                # 2) kw-only
-                kwonly_params = node.args.kwonlyargs
-                for i, kwp in enumerate(kwonly_params):
-                    pname = kwp.arg
-                    if pname in call_kwargs:
-                        self._set_name_value(pname, call_kwargs.pop(pname))
-                    else:
-                        if kw_defaults[i] is not None:
-                            self._set_name_value(pname, kw_defaults[i])
-                        else:
-                            raise TypeError(
-                                "Lambda missing required keyword-only "
-                                f"argument: '{pname}'"
-                            )
-
-                # 3) *args
-                if node.args.vararg:
-                    vararg_name = node.args.vararg.arg
-                    leftover = call_args[len(positional_params) :]
-                    self._set_name_value(vararg_name, leftover)
-                else:
-                    if len(call_args) > len(positional_params):
-                        raise TypeError(
-                            f"Lambda takes {len(positional_params)} positional "
-                            f"arguments but {len(call_args)} were given"
-                        )
-
-                # 4) **kwargs
-                if node.args.kwarg:
-                    kwarg_name = node.args.kwarg.arg
-                    self._set_name_value(kwarg_name, call_kwargs)
-                else:
-                    if call_kwargs:
-                        first_unexpected = next(iter(call_kwargs))
-                        raise TypeError(
-                            "Lambda got an unexpected keyword argument: "
-                            f"'{first_unexpected}'"
-                        )
-
-                # 5) Evaluate the body
+                # Evaluate the body
                 result = self.visit(node.body)
 
                 # Update nonlocals
@@ -1393,6 +1415,35 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         return lambda_func
 
+    def visit_Lambda(self, node: ast.Lambda) -> t.Callable[..., t.Any]:
+        """Handle lambda function definition.
+
+        Args:
+            node: Lambda AST node
+
+        Returns:
+            The created lambda function
+        """
+        closure_env: dict[str, t.Any] = {}
+        outer_env: dict[str, t.Any] = self.local_env
+
+        # Precompute default values for positional and kw-only
+        defaults = [self.visit(d) for d in node.args.defaults]
+        kw_defaults = [
+            None if d is None else self.visit(d) for d in node.args.kw_defaults
+        ]
+        required_count = len(node.args.args) - len(defaults)
+
+        # Create the lambda closure
+        return self._create_lambda_closure(
+            node=node,
+            outer_env=outer_env,
+            closure_env=closure_env,
+            defaults=defaults,
+            kw_defaults=kw_defaults,
+            required_count=required_count,
+        )
+
     def visit_Return(self, node: ast.Return) -> None:
         if self.control.function_depth == 0:
             raise SyntaxError("'return' outside function")
@@ -1400,18 +1451,27 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         value = None if node.value is None else self.visit(node.value)
         raise ReturnValue(value)
 
-    def visit_Call(self, node: ast.Call) -> t.Any:
+    def _evaluate_call_arguments(
+        self, args: list[ast.expr], keywords: list[ast.keyword]
+    ) -> tuple[list[t.Any], dict[str, t.Any]]:
+        """Evaluate function call arguments.
+
+        Args:
+            args: List of positional argument AST nodes
+            keywords: List of keyword argument AST nodes
+
+        Returns:
+            Tuple of (positional args list, keyword args dict)
+
+        Raises:
+            TypeError: If keyword argument is invalid
         """
-        Handle function calls, including positional args, keyword args, and
-        **kwargs.
-        """
-        # Evaluate the function object
-        func = self.visit(node.func)
-        pos_args = [self.visit(arg) for arg in node.args]
+        # Evaluate positional arguments
+        pos_args = [self.visit(arg) for arg in args]
 
         # Evaluate keyword arguments
         kwargs = {}
-        for kw in node.keywords:
+        for kw in keywords:
             if kw.arg is None:
                 # This is the case of f(**some_dict)
                 dict_val = self.visit(kw.value)
@@ -1431,6 +1491,24 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 value = self.visit(kw.value)
                 kwargs[key_name] = value
 
+        return pos_args, kwargs
+
+    def _call_function(
+        self, func: t.Any, pos_args: list[t.Any], kwargs: dict[str, t.Any]
+    ) -> t.Any:
+        """Call a function with the given arguments.
+
+        Args:
+            func: Function object to call
+            pos_args: List of positional arguments
+            kwargs: Dictionary of keyword arguments
+
+        Returns:
+            Result of the function call
+
+        Raises:
+            TypeError: If the function is not callable
+        """
         # Check if the function is callable
         if not callable(func):
             raise TypeError(f"'{type(func).__name__}' object is not callable")
@@ -1446,17 +1524,35 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Handle normal functions
         return func(*pos_args, **kwargs)
 
+    def visit_Call(self, node: ast.Call) -> t.Any:
+        """
+        Handle function calls, including positional args, keyword args, and
+        **kwargs.
+
+        Args:
+            node: Call AST node
+
+        Returns:
+            Result of the function call
+
+        Raises:
+            TypeError: If the function is not callable or arguments are invalid
+        """
+        # Evaluate the function object
+        func = self.visit(node.func)
+
+        # Evaluate arguments
+        pos_args, kwargs = self._evaluate_call_arguments(
+            node.args, node.keywords
+        )
+
+        # Call the function
+        return self._call_function(func, pos_args, kwargs)
+
     def visit_GeneratorExp(
         self, node: ast.GeneratorExp
     ) -> t.Generator[t.Any, None, None]:
-        """Handle generator expressions.
-
-        Args:
-            node: GeneratorExp AST node
-
-        Returns:
-            A generator object
-        """
+        """Handle generator expressions."""
         # Create new scope for the generator expression
         gen_scope = Scope()
         self.scope_stack.append(gen_scope)
@@ -1535,51 +1631,12 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             for key, value in zip(node.keys, node.values)
         }
 
-    def visit_ListComp(self, node: ast.ListComp) -> list:
-        return self._handle_comprehension(node, list)
+    def _setup_comprehension_scope(self) -> tuple[Scope, dict[str, t.Any]]:
+        """Set up a new scope for comprehension execution.
 
-    def visit_SetComp(self, node: ast.SetComp) -> set:
-        return self._handle_comprehension(node, set)
-
-    def visit_DictComp(self, node: ast.DictComp) -> dict:
-        # Preserve the current local environment
-        outer_env = self.local_env.copy()
-        self.local_env = self.local_env.copy()
-
-        try:
-            result = {}
-            for generator in node.generators:
-                iter_obj = self.visit(generator.iter)
-
-                for item in iter_obj:
-                    try:
-                        self._handle_unpacking_target(generator.target, item)
-                    except UnsupportedUnpackingError:
-                        # If unpacking fails, fallback to simple assignment
-                        if isinstance(generator.target, ast.Name):
-                            self.local_env[generator.target.id] = item
-                        else:
-                            raise
-
-                    # Check if all conditions are met
-                    if all(
-                        self.visit(if_clause) for if_clause in generator.ifs
-                    ):
-                        # Evaluate key and value
-                        key = self.visit(node.key)
-                        value = self.visit(node.value)
-                        result[key] = value
-
-            return result
-        finally:
-            # Restore the original local environment
-            self.local_env = outer_env
-
-    T = t.TypeVar("T", list, set)
-
-    def _handle_comprehension(
-        self, node: t.Union[ast.ListComp, ast.SetComp], result_type: t.Type[T]
-    ) -> T:
+        Returns:
+            Tuple of (new scope, outer environment)
+        """
         # Create new scope for the comprehension
         comp_scope = Scope()
         self.scope_stack.append(comp_scope)
@@ -1587,6 +1644,66 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Copy the outer environment
         outer_env = self.local_env
         self.local_env = outer_env.copy()
+
+        return comp_scope, outer_env
+
+    def _process_generator_item(
+        self,
+        generator: ast.comprehension,
+        item: t.Any,
+        current_env: dict[str, t.Any],
+        outer_env: dict[str, t.Any],
+    ) -> bool:
+        """Process a single item in a generator.
+
+        Args:
+            generator: Generator AST node
+            item: Current item being processed
+            current_env: Current environment dictionary
+            outer_env: Outer environment dictionary
+
+        Returns:
+            bool: Whether all conditions are met
+
+        Raises:
+            UnsupportedUnpackingError: If target unpacking fails
+        """
+        # Restore environment from before this generator's loop
+        self.local_env = current_env.copy()
+
+        try:
+            self._handle_unpacking_target(generator.target, item)
+        except UnsupportedUnpackingError:
+            if isinstance(generator.target, ast.Name):
+                self._set_name_value(generator.target.id, item)
+            else:
+                raise
+
+        # Check if all conditions are met
+        conditions_met = all(
+            self.visit(if_clause) for if_clause in generator.ifs
+        )
+
+        # Update outer environment with any named expression bindings
+        for name, value in self.local_env.items():
+            if name not in current_env:
+                outer_env[name] = value
+
+        return conditions_met
+
+    def _handle_comprehension(
+        self, node: ast.ListComp | ast.SetComp, result_type: type[T]
+    ) -> T:
+        """Handle list and set comprehensions.
+
+        Args:
+            node: ListComp or SetComp AST node
+            result_type: Type of the result (list or set)
+
+        Returns:
+            The evaluated comprehension result
+        """
+        _, outer_env = self._setup_comprehension_scope()
 
         try:
             result: list[t.Any] = []
@@ -1605,33 +1722,58 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 current_env = self.local_env.copy()
 
                 for item in iter_obj:
-                    # Restore environment from before this generator's loop
-                    self.local_env = current_env.copy()
-
-                    try:
-                        self._handle_unpacking_target(generator.target, item)
-                    except UnsupportedUnpackingError:
-                        if isinstance(generator.target, ast.Name):
-                            self._set_name_value(generator.target.id, item)
-                        else:
-                            raise
-
-                    # Check if conditions
-                    if all(
-                        self.visit(if_clause) for if_clause in generator.ifs
+                    if self._process_generator_item(
+                        generator, item, current_env, outer_env
                     ):
                         # Process next generator or append result
                         process_generator(generators, index + 1)
 
-                    # Update outer environment with any named expression
-                    # bindings
-                    for name, value in self.local_env.items():
-                        if name not in current_env:
-                            outer_env[name] = value
-
             # Start processing generators recursively
             process_generator(node.generators)
             return result_type(result)
+        finally:
+            # Restore the outer environment and pop the scope
+            self.local_env = outer_env
+            self.scope_stack.pop()
+
+    def visit_ListComp(self, node: ast.ListComp) -> list:
+        return self._handle_comprehension(node, list)
+
+    def visit_SetComp(self, node: ast.SetComp) -> set:
+        return self._handle_comprehension(node, set)
+
+    def visit_DictComp(self, node: ast.DictComp) -> dict[t.Any, t.Any]:
+        """Handle dictionary comprehensions."""
+        _, outer_env = self._setup_comprehension_scope()
+
+        try:
+            result: dict[t.Any, t.Any] = {}
+
+            def process_generator(generators: list, index: int = 0) -> None:
+                if index >= len(generators):
+                    # Base case: all generators processed, evaluate key-value
+                    # pair
+                    key = self.visit(node.key)
+                    value = self.visit(node.value)
+                    result[key] = value
+                    return
+
+                generator = generators[index]
+                iter_obj = self.visit(generator.iter)
+
+                # Save the current environment before processing this generator
+                current_env = self.local_env.copy()
+
+                for item in iter_obj:
+                    if self._process_generator_item(
+                        generator, item, current_env, outer_env
+                    ):
+                        # Process next generator or evaluate key-value pair
+                        process_generator(generators, index + 1)
+
+            # Start processing generators recursively
+            process_generator(node.generators)
+            return result
         finally:
             # Restore the outer environment and pop the scope
             self.local_env = outer_env
@@ -1700,6 +1842,170 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 f"for value {repr(value)} of type {type(value).__name__}"
             ) from e
 
+    def _check_attribute_security(self, attr_name: str) -> None:
+        """Check if attribute access is allowed.
+
+        Args:
+            attr_name: Name of the attribute to check
+
+        Raises:
+            SecurityError: If attribute access is not allowed
+        """
+        if attr_name in self.FORBIDDEN_ATTRS:
+            raise SecurityError(
+                f"Access to '{attr_name}' attribute is not allowed"
+            )
+
+    def _get_attribute_safely(self, value: t.Any, attr_name: str) -> t.Any:
+        """Get attribute value with proper error handling.
+
+        Args:
+            value: Object to get attribute from
+            attr_name: Name of the attribute to get
+
+        Returns:
+            The attribute value
+
+        Raises:
+            AttributeError: If attribute doesn't exist
+        """
+        try:
+            return getattr(value, attr_name)
+        except AttributeError as e:
+            if isinstance(value, type):
+                raise AttributeError(
+                    f"type object '{value.__name__}' has no attribute "
+                    f"'{attr_name}'"
+                ) from e
+            else:
+                raise AttributeError(
+                    f"'{type(value).__name__}' object has no attribute "
+                    f"'{attr_name}'"
+                ) from e
+
+    def _create_bound_method(
+        self, func: t.Any, instance: t.Any, attr_name: str
+    ) -> t.Callable[..., t.Any]:
+        """Create a bound method for a function.
+
+        Args:
+            func: Function to bind
+            instance: Instance to bind to
+            attr_name: Name of the attribute
+
+        Returns:
+            The bound method
+        """
+
+        def bound_method(*args, **kwargs):
+            prev_env = self.local_env
+
+            try:
+                # Check if this is a static method - either by flag or by type
+                has_static_flag = getattr(
+                    type(instance), f"__static_{attr_name}", False
+                )
+                is_static_method = isinstance(func, staticmethod)
+
+                # Check if the method is a function
+                is_function = isinstance(func, types.FunctionType)
+
+                if has_static_flag or is_static_method:
+                    # For static methods, don't bind to instance
+                    self.local_env = prev_env
+                    if is_static_method:
+                        method = func.__get__(None, type(instance))
+                        return method(*args, **kwargs)
+                    return func(*args, **kwargs)
+                elif isinstance(func, classmethod):
+                    self.local_env = prev_env
+                    method = func.__get__(type(instance), type(instance))
+                    return method(*args, **kwargs)
+                elif is_function:
+                    # If it's a function, call it directly
+                    self.local_env = prev_env
+                    return func(*args, **kwargs)
+                else:
+                    self.local_env = prev_env
+                    method = func.__get__(instance, type(instance))
+                    return method(*args, **kwargs)
+            finally:
+                self.local_env = prev_env
+
+        return bound_method
+
+    def _create_decorated_method(
+        self, func: t.Any, instance: t.Any, decorator_type: type
+    ) -> t.Callable[..., t.Any]:
+        """Create a method for a decorated function.
+
+        Args:
+            func: Function to decorate
+            instance: Instance to bind to
+            decorator_type: Type of the decorator
+
+        Returns:
+            The decorated method
+        """
+        if isinstance(decorator_type, (classmethod, property)):
+
+            def decorated_method(*args, **kwargs):
+                prev_env = self.local_env
+                self.local_env = {**prev_env, "self": instance}
+                try:
+                    return func(*args, **kwargs)
+                finally:
+                    self.local_env = prev_env
+
+            return decorated_method
+        else:
+            # For staticmethod, just return the function as is
+            return func
+
+    def _should_bind_function(
+        self, func: t.Any, instance: t.Any, attr_name: str
+    ) -> bool:
+        """Check if a function should be bound to an instance.
+
+        Args:
+            func: Function to check
+            instance: Instance to potentially bind to
+            attr_name: Name of the attribute
+
+        Returns:
+            Whether the function should be bound
+        """
+        # Check if this is a registered function
+        if registry.is_registered(func):
+            return False
+
+        # Check if this is a static method
+        if isinstance(instance, type):
+            # If accessed on class, check for static marker
+            if getattr(instance, f"__static_{attr_name}", False):
+                return False
+        else:
+            # If accessed on instance, check the class
+            if getattr(type(instance), f"__static_{attr_name}", False):
+                return False
+
+        # If not a static method, check if it's a module function
+        if isinstance(instance, types.ModuleType):
+            # For module functions, don't bind self
+            return False
+
+        # Check if the function is in the global environment
+        for global_value in self.global_env.values():
+            if isinstance(global_value, dict):
+                # Check nested dictionaries
+                for nested_value in global_value.values():
+                    if func is nested_value:
+                        return False
+            elif func is global_value:
+                return False
+
+        return True
+
     def visit_Attribute(self, node: ast.Attribute) -> t.Any:
         """Visit an attribute access node.
 
@@ -1713,116 +2019,24 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             SecurityError: If accessing a forbidden attribute
             AttributeError: If the attribute doesn't exist
         """
-        if node.attr in self.FORBIDDEN_ATTRS:
-            raise SecurityError(
-                f"Access to '{node.attr}' attribute is not allowed"
-            )
+        # Security check
+        self._check_attribute_security(node.attr)
 
+        # Get the base value
         value = self.visit(node.value)
 
-        # Handle normal attribute access
-        try:
-            attr = getattr(value, node.attr)
-        except AttributeError as e:
-            if isinstance(value, type):
-                raise AttributeError(
-                    f"type object '{value.__name__}' has no attribute "
-                    f"'{node.attr}'"
-                ) from e
-            else:
-                raise AttributeError(
-                    f"'{type(value).__name__}' object has no attribute "
-                    f"'{node.attr}'"
-                ) from e
+        # Get the attribute safely
+        attr = self._get_attribute_safely(value, node.attr)
 
-        # If this is a function defined in our namespace, bind it to the
-        # instance
+        # Handle function binding
         if isinstance(attr, types.FunctionType):
-            # Check if this is a registered function
-            if registry.is_registered(attr):
-                return attr
-
-            # Check if this is a static method
-            if isinstance(value, type):
-                # If accessed on class, check for static marker
-                if getattr(value, f"__static_{node.attr}", False):
-                    return attr
-            else:
-                # If accessed on instance, check the class
-                if getattr(type(value), f"__static_{node.attr}", False):
-                    return attr
-
-            # If not a static method, check if it's a module function
-            if isinstance(value, types.ModuleType):
-                # For module functions, don't bind self
-                return attr
-
-            # Check if the function is in the global environment
-            for global_value in self.global_env.values():
-                if isinstance(global_value, dict):
-                    # Check nested dictionaries
-                    for nested_value in global_value.values():
-                        if attr is nested_value:
-                            return attr
-                elif attr is global_value:
-                    return attr
-
-            # If not in global environment, bind it to the instance
-            def bound_method(*args, **kwargs):
-                prev_env = self.local_env
-
-                try:
-                    # Check if this is a static method - either by flag or by
-                    # type
-                    has_static_flag = getattr(
-                        type(value), f"__static_{node.attr}", False
-                    )
-                    is_static_method = isinstance(attr, staticmethod)
-
-                    # Check if the method is a function
-                    is_function = isinstance(attr, types.FunctionType)
-
-                    if has_static_flag or is_static_method:
-                        # For static methods, don't bind to instance
-                        self.local_env = prev_env
-                        if is_static_method:
-                            method = attr.__get__(None, type(value))
-                            return method(*args, **kwargs)
-                        return attr(*args, **kwargs)
-                    elif isinstance(attr, classmethod):
-                        self.local_env = prev_env
-                        method = attr.__get__(type(value), type(value))
-                        return method(*args, **kwargs)
-                    elif is_function:
-                        # If it's a function, call it directly
-                        self.local_env = prev_env
-                        return attr(*args, **kwargs)
-                    else:
-                        self.local_env = prev_env
-                        method = attr.__get__(value, type(value))
-                        return method(*args, **kwargs)
-                finally:
-                    self.local_env = prev_env
-
-            return bound_method
+            if self._should_bind_function(attr, value, node.attr):
+                return self._create_bound_method(attr, value, node.attr)
+            return attr
         elif isinstance(attr, (classmethod, staticmethod, property)):
             # For decorated methods, get the underlying function
             func = attr.__get__(value, type(value))
-            if isinstance(attr, (classmethod, property)):
-                # For classmethod and property, we need to set up the
-                # environment
-                def decorated_method(*args, **kwargs):
-                    prev_env = self.local_env
-                    self.local_env = {**prev_env, "self": value}
-                    try:
-                        return func(*args, **kwargs)
-                    finally:
-                        self.local_env = prev_env
-
-                return decorated_method
-            else:
-                # For staticmethod, just return the function as is
-                return func
+            return self._create_decorated_method(func, value, type(attr))
 
         return attr
 
@@ -1924,6 +2138,128 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 self.visit(stmt)
         return result
 
+    def _create_custom_super(
+        self,
+        class_obj: type | None,
+    ) -> t.Callable[..., t.Any]:
+        """Create a custom super implementation for a class."""
+
+        def custom_super(cls=None, obj_or_type=None):
+            if cls is None and obj_or_type is None:
+                # Handle zero-argument super() by finding the calling class
+                # and instance from the current scope
+                if "self" in self.local_env:
+                    obj_or_type = self.local_env["self"]
+                    cls = class_obj
+                else:
+                    raise RuntimeError(
+                        "super(): no arguments and no context - unable to "
+                        "determine class and instance"
+                    )
+            elif cls is None:
+                # Handle one-argument super()
+                if obj_or_type is None:
+                    raise TypeError("super() argument 1 cannot be None")
+                cls = type(obj_or_type)
+
+            if obj_or_type is None:
+                raise TypeError("super() argument 2 cannot be None")
+
+            # Find the next class in the MRO after cls
+            mro = (
+                obj_or_type.__class__.__mro__
+                if isinstance(obj_or_type, object)
+                else obj_or_type.__mro__
+            )
+            for i, base in enumerate(mro):
+                if base is cls:
+                    if i + 1 < len(mro):
+                        next_class = mro[i + 1]
+
+                        def bound_super_method(name, current_class=next_class):
+                            method = getattr(current_class, name)
+                            if isinstance(method, (staticmethod, classmethod)):
+                                return method.__get__(
+                                    obj_or_type, current_class
+                                )
+                            else:
+                                return method.__get__(
+                                    obj_or_type, current_class
+                                )
+
+                        # Create a new class with a __getattr__ method that
+                        # will bind self to the method
+                        params = {
+                            "__getattr__": (
+                                lambda _, name, method=bound_super_method: (
+                                    method(name)
+                                )
+                            )
+                        }
+                        return type("Super", (), params)()
+                    break
+            raise RuntimeError("super(): bad __mro__")
+
+        return custom_super
+
+    def _process_class_function(
+        self, stmt: ast.FunctionDef, namespace: dict
+    ) -> None:
+        """Process a function definition within a class.
+
+        Args:
+            stmt: FunctionDef AST node
+            namespace: Class namespace dictionary
+        """
+        # Handle function definition
+        self.visit(stmt)
+
+        # Get the function from namespace
+        func = namespace[stmt.name]
+
+        # Handle decorators in reverse order
+        for decorator in reversed(stmt.decorator_list):
+            # Evaluate the decorator
+            decorator_func = self.visit(decorator)
+            # Apply the decorator
+            func = decorator_func(func)
+
+            # For static methods, we need to store both the decorator and the
+            # function
+            if decorator_func is staticmethod:
+                namespace[f"__static_{stmt.name}"] = True
+
+        # Update the function in namespace
+        namespace[stmt.name] = func
+
+    def _create_class_namespace(self, node: ast.ClassDef) -> dict[str, t.Any]:
+        """Create and populate the class namespace.
+
+        Args:
+            node: ClassDef AST node
+
+        Returns:
+            The populated class namespace
+        """
+        namespace: dict[str, t.Any] = {}
+
+        # Save current environment
+        prev_env = self.local_env
+        self.local_env = namespace
+
+        try:
+            # Execute the class body
+            for stmt in node.body:
+                if isinstance(stmt, ast.FunctionDef):
+                    self._process_class_function(stmt, namespace)
+                else:
+                    self.visit(stmt)
+        finally:
+            # Restore the environment
+            self.local_env = prev_env
+
+        return namespace
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Handle class definition with support for inheritance and class body.
 
@@ -1938,108 +2274,12 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             # Evaluate base classes
             bases = tuple(self.visit(base) for base in node.bases)
 
-            # Create namespace for class attributes
-            namespace: t.Dict[str, t.Any] = {}
+            # Create and populate the class namespace
+            namespace = self._create_class_namespace(node)
 
-            # Save current environment
-            prev_env = self.local_env
-            self.local_env = namespace
-
-            try:
-                # Execute the class body
-                for stmt in node.body:
-                    if isinstance(stmt, ast.FunctionDef):
-                        # Handle function definition
-                        self.visit(stmt)
-
-                        # Get the function from namespace
-                        func = namespace[stmt.name]
-
-                        # Handle decorators in reverse order
-                        for decorator in reversed(stmt.decorator_list):
-                            # Evaluate the decorator
-                            decorator_func = self.visit(decorator)
-                            # Apply the decorator
-                            func = decorator_func(func)
-
-                            # For static methods, we need to store both the
-                            # decorator and the function
-                            if decorator_func is staticmethod:
-                                namespace[f"__static_{stmt.name}"] = True
-
-                        # Update the function in namespace
-                        namespace[stmt.name] = func
-                    else:
-                        self.visit(stmt)
-            finally:
-                # Restore the environment
-                self.local_env = prev_env
-
-            # Create a custom super implementation for this class
-            def custom_super(cls=None, obj_or_type=None):
-                if cls is None and obj_or_type is None:
-                    # Handle zero-argument super() by finding the calling class
-                    # and instance from the current scope
-                    if "self" in self.local_env:
-                        obj_or_type = self.local_env["self"]
-                        cls = class_obj
-                    else:
-                        raise RuntimeError(
-                            "super(): no arguments and no context - unable to "
-                            "determine class and instance"
-                        )
-                elif cls is None:
-                    # Handle one-argument super()
-                    if obj_or_type is None:
-                        raise TypeError("super() argument 1 cannot be None")
-                    cls = type(obj_or_type)
-
-                if obj_or_type is None:
-                    raise TypeError("super() argument 2 cannot be None")
-
-                # Find the next class in the MRO after cls
-                mro = (
-                    obj_or_type.__class__.__mro__
-                    if isinstance(obj_or_type, object)
-                    else obj_or_type.__mro__
-                )
-                for i, base in enumerate(mro):
-                    if base is cls:
-                        if i + 1 < len(mro):
-                            next_class = mro[i + 1]
-
-                            # Create a bound method that will bind self to the
-                            # method
-                            def bound_super_method(
-                                name, current_class=next_class
-                            ):
-                                method = getattr(current_class, name)
-                                if isinstance(
-                                    method, (staticmethod, classmethod)
-                                ):
-                                    return method.__get__(
-                                        obj_or_type, current_class
-                                    )
-                                else:
-                                    return method.__get__(
-                                        obj_or_type, current_class
-                                    )
-
-                            # Create a new class with a __getattr__ method that
-                            # will bind self to the method
-                            params = {
-                                "__getattr__": (
-                                    lambda _, name, method=bound_super_method: (
-                                        method(name)
-                                    )
-                                )
-                            }
-                            return type("Super", (), params)()
-                        break
-                raise RuntimeError("super(): bad __mro__")
-
-            # Add custom super to the class namespace
-            namespace["super"] = custom_super
+            # Add custom super to the class namespace (will be updated after
+            # class creation)
+            namespace["super"] = self._create_custom_super(class_obj=None)
 
             # Set the module name for the class
             namespace["__module__"] = "monic.expressions.registry"
@@ -2048,6 +2288,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             class_obj = types.new_class(
                 node.name, bases, {}, lambda ns: ns.update(namespace)
             )
+
+            # Update super with the actual class object (after class creation)
+            namespace["super"] = self._create_custom_super(class_obj=class_obj)
 
             # Register the class in the current scope
             self._set_name_value(node.name, class_obj)
