@@ -2344,7 +2344,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         return custom_super
 
     def _process_class_function(
-        self, stmt: ast.FunctionDef, namespace: dict
+        self, stmt: ast.FunctionDef, namespace: dict[str, t.Any]
     ) -> None:
         """Process a function definition within a class.
 
@@ -2420,7 +2420,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             namespace["super"] = self._create_custom_super(class_obj=None)
 
             # Set the module name for the class
-            namespace["__module__"] = "monic.expressions.registry"
+            namespace["__module__"] = "monic.expressions.__namespace__"
 
             # Create the class object
             class_obj = types.new_class(
@@ -2751,19 +2751,27 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
                 # Create a temporary scope for pattern matching
                 with ScopeContext(self):
-                    if self._match_pattern(pattern, subject):
-                        # If there's a guard, evaluate it
-                        if case.guard is not None:
-                            guard_result = self.visit(case.guard)
-                            if not guard_result:
-                                continue
+                    # Try to match the pattern
+                    if not self._match_pattern(pattern, subject):
+                        # If no match, continue to the next case
+                        continue
 
-                        # Copy matched variables from temp scope to match scope
-                        for name in self.current_scope.locals:
-                            if name in self.local_env:
-                                self._set_name_value(name, self.local_env[name])
+                    # If there's a guard, evaluate it
+                    if case.guard is not None:
+                        # Evaluate the guard expression
+                        guard_result = self.visit(case.guard)
+                        if not guard_result:
+                            # If the guard fails, continue to the next case
+                            continue
 
-                        # Execute the case body
-                        for stmt in case.body:
-                            self.visit(stmt)
-                        return
+                    # Copy matched variables from temp scope to match scope
+                    for name in self.current_scope.locals:
+                        if name in self.local_env:
+                            self._set_name_value(name, self.local_env[name])
+
+                    # Execute the case body
+                    for stmt in case.body:
+                        self.visit(stmt)
+
+                    # Return the match statement since we found a match
+                    return
