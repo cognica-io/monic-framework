@@ -13,7 +13,7 @@ from monic.expressions import (
     ExpressionsInterpreter,
     UnsupportedUnpackingError,
     SecurityError,
-    register,
+    monic_bind,
 )
 from monic.expressions.registry import registry
 
@@ -38,7 +38,7 @@ def test_complex_method_handling():
     interpreter = ExpressionsInterpreter()
 
     # Test property descriptor
-    @register("test.TestClass")
+    @monic_bind("test.TestClass")
     class TestClass:
         def __init__(self):
             self._value = 0
@@ -339,22 +339,22 @@ def test_registry_error_paths():
         ValueError, match="is already registered as a non-namespace"
     ):
 
-        @register("test")
+        @monic_bind("test")
         def test_func():
             return 42  # pragma: no cover
 
-        @register("test.func")
+        @monic_bind("test.func")
         def test_func2():
             return 43  # pragma: no cover
 
     # Test duplicate registration
-    @register("math.add")
+    @monic_bind("math.add")
     def add1():
         return 42  # pragma: no cover
 
     with pytest.raises(ValueError, match="already registered"):
 
-        @register("math.add")
+        @monic_bind("math.add")
         def add2():
             return 43  # pragma: no cover
 

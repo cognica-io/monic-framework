@@ -11,7 +11,12 @@ from monic.expressions.exceptions import (
 )
 from monic.expressions.interpreter import ExpressionsInterpreter
 from monic.expressions.parser import ExpressionsParser
-from monic.expressions.registry import register, register_module
+from monic.expressions.registry import (
+    monic_bind,
+    monic_bind_module,
+    register,
+    register_module,
+)
 
 
 __all__ = [
@@ -23,6 +28,8 @@ __all__ = [
     "SecurityError",
     "UnsupportedUnpackingError",
     # Registry
+    "monic_bind",
+    "monic_bind_module",
     "register",
     "register_module",
 ]

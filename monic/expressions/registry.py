@@ -285,3 +285,9 @@ register = registry.register
 
 # Function for registering modules
 register_module = registry.register_module
+
+# Decorator for binding objects to the registry
+monic_bind = registry.register
+
+# Function for binding modules to the registry
+monic_bind_module = registry.register_module

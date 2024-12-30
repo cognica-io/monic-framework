@@ -13,7 +13,7 @@ from monic.expressions import (
     ExpressionsContext,
     ExpressionsParser,
     ExpressionsInterpreter,
-    register,
+    monic_bind,
 )
 
 
@@ -25,7 +25,7 @@ class ComputeInput(BaseModel):
     timeout: float = 10.0
 
 
-@register
+@monic_bind
 def say_hello(name: str) -> str:
     return f"Hello, {name}!"
 
