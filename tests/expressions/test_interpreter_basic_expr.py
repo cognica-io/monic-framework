@@ -462,3 +462,137 @@ def test_exception_handling_details():
     interpreter.execute(parser.parse(code))
     assert interpreter.get_name_value("error_msg") == "test"
     assert interpreter.get_name_value("error_exists") is False
+
+
+def test_nested_while_with_break_continue():
+    # Test nested while loops with break and continue
+    code = """
+result = []
+i = 0
+while i < 3:
+    j = 0
+    while j < 3:
+        if j == 1:
+            j += 1
+            continue
+        if i == 1 and j == 2:
+            break
+        result.append((i, j))
+        j += 1
+    if i == 2:
+        break
+    i += 1
+result
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+
+    expected = [
+        (0, 0),
+        (0, 2),  # i=0: j=0, skip j=1, j=2
+        (1, 0),  # i=1: j=0, skip j=1, break at j=2
+        (2, 0),
+        (2, 2),  # i=2: j=0, skip j=1, j=2, then break outer loop
+    ]
+    assert result == expected
+
+
+def test_nested_for_with_break_continue():
+    # Test nested for loops with break and continue
+    code = """
+result = []
+for i in range(3):
+    for j in range(4):
+        if j == 1:
+            continue
+        if i == 1 and j == 2:
+            break
+        result.append((i, j))
+    if i == 2:
+        break
+result
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+
+    expected = [
+        (0, 0),
+        (0, 2),
+        (0, 3),  # i=0: j=0, skip j=1, j=2, j=3
+        (1, 0),  # i=1: j=0, skip j=1, break at j=2
+        (2, 0),
+        (2, 2),
+        (2, 3),  # i=2: j=0, skip j=1, j=2, j=3, then break outer loop
+    ]
+    assert result == expected
+
+
+def test_while_for_mix_with_break_continue():
+    # Test mixing while and for loops with break and continue
+    code = """
+result = []
+i = 0
+while i < 3:
+    for j in range(3):
+        if j == 1:
+            continue
+        if i == 1 and j == 2:
+            break
+        result.append((i, j))
+    if i == 2:
+        break
+    i += 1
+result
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+
+    expected = [
+        (0, 0),
+        (0, 2),  # i=0: j=0, skip j=1, j=2
+        (1, 0),  # i=1: j=0, skip j=1, break at j=2
+        (2, 0),
+        (2, 2),  # i=2: j=0, skip j=1, j=2, then break outer loop
+    ]
+    assert result == expected
+
+
+def test_break_continue_with_else():
+    # Test break and continue with else clauses
+    code = """
+result = []
+for i in range(3):
+    for j in range(3):
+        if j == 1:
+            continue
+        if i == 1 and j == 2:
+            break
+        result.append((i, j))
+    else:
+        result.append(f"completed inner loop for i={i}")
+else:
+    result.append("completed outer loop")
+result
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+
+    expected = [
+        (0, 0),
+        (0, 2),
+        "completed inner loop for i=0",
+        (1, 0),  # inner loop breaks, no else
+        (2, 0),
+        (2, 2),
+        "completed inner loop for i=2",
+        "completed outer loop",
+    ]
+    assert result == expected
