@@ -35,7 +35,7 @@ curl "http://localhost:8000/compute?input=say_hello(\"Monic\")&timeout=5.0"
 - URL: `/compute`
 - Request Body (JSON):
 
-  ```json
+  ```jsonc
   {
     "input": "string",  // Required: Expression to compute
     "timeout": float    // Optional: Timeout for computation (default: 10.0)
