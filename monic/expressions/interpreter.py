@@ -12,7 +12,6 @@
 # pylint: disable=unnecessary-dunder-call
 
 import ast
-import datetime
 import operator
 import time
 import types
@@ -184,14 +183,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         # Add registered objects to global environment
         self.global_env.update(registry.get_all())
-
-        # Add built-in modules
-        self.global_env.update(
-            {
-                "datetime": datetime,
-                "time": time,
-            }
-        )
 
         # Add built-in decorators
         self.global_env.update(
