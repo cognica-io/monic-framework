@@ -35,14 +35,6 @@ class ReturnValue(Exception):
         self.value = value
 
 
-class BreakLoop(Exception):
-    """Raised to break out of a loop."""
-
-
-class ContinueLoop(Exception):
-    """Raised to continue to the next iteration of a loop."""
-
-
 @dataclass
 class Scope:
     # Names declared as global
@@ -121,6 +113,8 @@ class ControlFlow:
 
     function_depth: int = 0
     loop_depth: int = 0
+    break_flag: bool = False
+    continue_flag: bool = False
 
 
 # Type variable for comprehension result types
@@ -1156,7 +1150,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         """Handle break statement."""
         if self.control.loop_depth == 0:
             raise SyntaxError("'break' outside loop")
-        raise BreakLoop()
+        self.control.break_flag = True
 
     def visit_Continue(
         self, node: ast.Continue  # pylint: disable=unused-argument
@@ -1164,7 +1158,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         """Handle continue statement."""
         if self.control.loop_depth == 0:
             raise SyntaxError("'continue' outside loop")
-        raise ContinueLoop()
+        self.control.continue_flag = True
 
     def visit_While(self, node: ast.While) -> None:
         self.control.loop_depth += 1
@@ -1177,15 +1171,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
                 try:
                     for stmt in node.body:
-                        try:
-                            self.visit(stmt)
-                        except ContinueLoop:
+                        self.visit(stmt)
+                        if self.control.break_flag:
                             break
+                        if self.control.continue_flag:
+                            self.control.continue_flag = False
+                            break
+                    if self.control.break_flag:
+                        break
                     else:
                         # This else block is executed if no break occurred
                         continue
-                except BreakLoop:
-                    break
                 except ReturnValue as rv:
                     raise rv
                 except Exception as e:
@@ -1194,6 +1190,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             self.visit(stmt)
                     raise e
         finally:
+            self.control.break_flag = False
+            self.control.continue_flag = False
             self.control.loop_depth -= 1
 
     def visit_For(self, node: ast.For) -> None:
@@ -1208,23 +1206,30 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
                 try:
                     for stmt in node.body:
-                        try:
-                            self.visit(stmt)
-                        except ContinueLoop:
+                        self.visit(stmt)
+                        if self.control.break_flag:
                             break
+                        if self.control.continue_flag:
+                            self.control.continue_flag = False
+                            break
+                    if self.control.break_flag:
+                        break
                     else:
                         # This else block is executed if no break occurred
                         continue
-                except BreakLoop:
-                    break
                 except ReturnValue as rv:
                     raise rv
+            if not self.control.break_flag and node.orelse:
+                for stmt in node.orelse:
+                    self.visit(stmt)
         except Exception as e:
             if node.orelse:
                 for stmt in node.orelse:
                     self.visit(stmt)
             raise e
         finally:
+            self.control.break_flag = False
+            self.control.continue_flag = False
             self.control.loop_depth -= 1
 
     def _validate_nonlocal_declarations(
