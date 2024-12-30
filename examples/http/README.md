@@ -21,10 +21,6 @@ Examples:
 # Basic usage (URL-encoded)
 curl "http://localhost:8000/compute?input=21%2B21"
 
-# Alternative URL-encoded formats
-curl "http://localhost:8000/compute?input=21%20%2B%2021"
-curl "http://localhost:8000/compute?input=21+21"  # Some clients handle this
-
 # With custom timeout (URL-encoded)
 curl "http://localhost:8000/compute?input=21%2B21&timeout=5.0"
 ```
@@ -62,11 +58,17 @@ curl -X POST http://localhost:8000/compute \
 
 ### Response
 
-Both endpoints return a JSON response:
+The response is a JSON object with a `result` field.
 
 ```json
 {
   "result": 42
+}
+```
+
+```json
+{
+  "result": "Hello, Monic!"
 }
 ```
 
