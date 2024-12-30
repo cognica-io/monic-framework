@@ -412,10 +412,11 @@ class Registry:
         Raises:
             KeyError: If the name is not found in the registry
         """
-        # Check if the name is a builtin object
         try:
+            # Check if the name is in the default registry first
             return self._get_from_namespace(name, self._default_objects)
         except KeyError:
+            # If not found, check the main registry
             return self._get_from_namespace(name, self._objects)
 
 
