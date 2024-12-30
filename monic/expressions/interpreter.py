@@ -2433,6 +2433,296 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             # Register the class in the current scope
             self._set_name_value(node.name, class_obj)
 
+    def _match_value_pattern(
+        self,
+        pattern: ast.MatchValue,
+        value: t.Any,
+    ) -> bool:
+        """Match a literal value pattern.
+
+        Args:
+            pattern: MatchValue AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        pattern_value = self.visit(pattern.value)
+        return type(value) is type(pattern_value) and value == pattern_value
+
+    def _match_sequence_pattern(
+        self,
+        pattern: ast.MatchSequence,
+        value: t.Any,
+    ) -> bool:
+        """Match a sequence pattern.
+
+        Args:
+            pattern: MatchSequence AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        if not isinstance(value, (list, tuple)):
+            return False
+
+        # Find star pattern index if exists
+        star_idx = -1
+        for i, p in enumerate(pattern.patterns):
+            if isinstance(p, ast.MatchStar):
+                star_idx = i
+                break
+
+        if star_idx == -1:
+            return self._match_fixed_sequence(pattern.patterns, value)
+        else:
+            return self._match_star_sequence(pattern.patterns, value, star_idx)
+
+    def _match_fixed_sequence(
+        self,
+        patterns: list[ast.pattern],
+        value: t.Any,
+    ) -> bool:
+        """Match a sequence pattern without star expressions.
+
+        Args:
+            patterns: List of pattern AST nodes
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        if len(patterns) != len(value):
+            return False
+        return all(self._match_pattern(p, v) for p, v in zip(patterns, value))
+
+    def _match_star_sequence(
+        self,
+        patterns: list[ast.pattern],
+        value: t.Any,
+        star_idx: int,
+    ) -> bool:
+        """Match a sequence pattern with a star expression.
+
+        Args:
+            patterns: List of pattern AST nodes
+            value: Value to match against
+            star_idx: Index of the star pattern
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        if len(value) < len(patterns) - 1:
+            return False
+
+        # Match patterns before star
+        for p, v in zip(patterns[:star_idx], value[:star_idx]):
+            if not self._match_pattern(p, v):
+                return False
+
+        # Calculate remaining elements after star
+        remaining_count = len(patterns) - star_idx - 1
+
+        # Match patterns after star
+        for p, v in zip(
+            patterns[star_idx + 1 :],
+            value[-remaining_count:] if remaining_count > 0 else [],
+        ):
+            if not self._match_pattern(p, v):
+                return False
+
+        # Bind star pattern if it has a name
+        star_pattern = patterns[star_idx]
+        if isinstance(star_pattern, ast.MatchStar) and star_pattern.name:
+            star_value = (
+                list(value[star_idx:-remaining_count])
+                if remaining_count > 0
+                else list(value[star_idx:])
+            )
+            self._set_name_value(star_pattern.name, star_value)
+            self.current_scope.locals.add(star_pattern.name)
+
+        return True
+
+    def _match_mapping_pattern(
+        self,
+        pattern: ast.MatchMapping,
+        value: t.Any,
+    ) -> bool:
+        """Match a mapping pattern.
+
+        Args:
+            pattern: MatchMapping AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        if not isinstance(value, dict):
+            return False
+
+        # Check if all required keys are present
+        for key in pattern.keys:
+            key_value = self.visit(key)
+            if key_value not in value:
+                return False
+
+        # Match each key-pattern pair
+        for key, pat in zip(pattern.keys, pattern.patterns):
+            key_value = self.visit(key)
+            if not self._match_pattern(pat, value[key_value]):
+                return False
+
+        # Handle rest pattern if present
+        if pattern.rest is not None:
+            rest_dict = {
+                k: v
+                for k, v in value.items()
+                if not any(self.visit(key) == k for key in pattern.keys)
+            }
+            self._set_name_value(pattern.rest, rest_dict)
+            self.current_scope.locals.add(pattern.rest)
+
+        return True
+
+    def _match_or_pattern(
+        self,
+        pattern: ast.MatchOr,
+        value: t.Any,
+    ) -> bool:
+        """Match an OR pattern.
+
+        Args:
+            pattern: MatchOr AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        for p in pattern.patterns:
+            # Create a temporary scope for each OR pattern
+            # to avoid variable binding conflicts
+            temp_scope = Scope()
+            self.scope_stack.append(temp_scope)
+            try:
+                if self._match_pattern(p, value):
+                    return True
+            finally:
+                self.scope_stack.pop()
+        return False
+
+    def _match_class_pattern(
+        self,
+        pattern: ast.MatchClass,
+        value: t.Any,
+    ) -> bool:
+        """Match a class pattern.
+
+        Args:
+            pattern: MatchClass AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        cls = self.visit(pattern.cls)
+        if not isinstance(value, cls):
+            return False
+
+        # Get positional attributes from __match_args__
+        match_args = getattr(cls, "__match_args__", ())
+        if len(pattern.patterns) > len(match_args):
+            return False
+
+        # Match positional patterns
+        for pat, attr_name in zip(pattern.patterns, match_args):
+            if not self._match_pattern(pat, getattr(value, attr_name)):
+                return False
+
+        # Match keyword patterns
+        for name, pat in zip(pattern.kwd_attrs, pattern.kwd_patterns):
+            if not hasattr(value, name):
+                return False
+            if not self._match_pattern(pat, getattr(value, name)):
+                return False
+
+        return True
+
+    def _match_as_pattern(
+        self,
+        pattern: ast.MatchAs,
+        value: t.Any,
+    ) -> bool:
+        """Match an AS pattern.
+
+        Args:
+            pattern: MatchAs AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        if pattern.pattern is not None:
+            if not self._match_pattern(pattern.pattern, value):
+                return False
+        if pattern.name is not None:
+            self._set_name_value(pattern.name, value)
+            self.current_scope.locals.add(pattern.name)
+        return True
+
+    def _match_star_pattern(
+        self,
+        pattern: ast.MatchStar,
+        value: t.Any,
+    ) -> bool:
+        """Match a star pattern.
+
+        Args:
+            pattern: MatchStar AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        if pattern.name is not None:
+            self._set_name_value(pattern.name, value)
+            self.current_scope.locals.add(pattern.name)
+        return True
+
+    def _match_pattern(
+        self,
+        pattern: ast.pattern,
+        value: t.Any,
+    ) -> bool:
+        """Match a pattern against a value.
+
+        Args:
+            pattern: Pattern AST node
+            value: Value to match against
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        if isinstance(pattern, ast.MatchValue):
+            return self._match_value_pattern(pattern, value)
+        elif isinstance(pattern, ast.MatchSingleton):
+            return value is pattern.value
+        elif isinstance(pattern, ast.MatchSequence):
+            return self._match_sequence_pattern(pattern, value)
+        elif isinstance(pattern, ast.MatchMapping):
+            return self._match_mapping_pattern(pattern, value)
+        elif isinstance(pattern, ast.MatchStar):
+            return self._match_star_pattern(pattern, value)
+        elif isinstance(pattern, ast.MatchAs):
+            return self._match_as_pattern(pattern, value)
+        elif isinstance(pattern, ast.MatchOr):
+            return self._match_or_pattern(pattern, value)
+        elif isinstance(pattern, ast.MatchClass):
+            return self._match_class_pattern(pattern, value)
+
+        return False
+
     def visit_Match(self, node: ast.Match) -> None:
         """Handle match-case statements.
 
@@ -2477,162 +2767,3 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         for stmt in case.body:
                             self.visit(stmt)
                         return
-
-    def _match_pattern(
-        self,
-        pattern: ast.pattern,
-        value: t.Any,
-    ) -> bool:
-        """Match a pattern against a value.
-
-        Args:
-            pattern: Pattern AST node
-            value: Value to match against
-
-        Returns:
-            bool: Whether the pattern matches the value
-        """
-        if isinstance(pattern, ast.MatchValue):
-            # Literal pattern: case 1: or case "string": etc.
-            pattern_value = self.visit(pattern.value)
-            return type(value) is type(pattern_value) and value == pattern_value
-        elif isinstance(pattern, ast.MatchSingleton):
-            # Singleton pattern: case None: or case True: etc.
-            return value is pattern.value
-        elif isinstance(pattern, ast.MatchSequence):
-            # Sequence pattern: case [x, y]:
-            if not isinstance(value, (list, tuple)):
-                return False
-
-            # Handle star patterns
-            star_idx = -1
-            for i, p in enumerate(pattern.patterns):
-                if isinstance(p, ast.MatchStar):
-                    star_idx = i
-                    break
-
-            if star_idx == -1:
-                # No star pattern
-                if len(pattern.patterns) != len(value):
-                    return False
-                # Match each element
-                for p, v in zip(pattern.patterns, value):
-                    if not self._match_pattern(p, v):
-                        return False
-                return True
-            else:
-                # Has star pattern
-                if len(value) < len(pattern.patterns) - 1:
-                    return False
-                # Match patterns before star
-                for p, v in zip(pattern.patterns[:star_idx], value[:star_idx]):
-                    if not self._match_pattern(p, v):
-                        return False
-
-                # Match patterns after star
-                remaining_count = len(pattern.patterns) - star_idx - 1
-                for p, v in zip(
-                    pattern.patterns[star_idx + 1 :],
-                    value[-remaining_count:] if remaining_count > 0 else [],
-                ):
-                    if not self._match_pattern(p, v):
-                        return False
-
-                # Bind star pattern if it has a name
-                star_pattern = pattern.patterns[star_idx]
-                if (
-                    isinstance(star_pattern, ast.MatchStar)
-                    and star_pattern.name
-                ):
-                    star_value = (
-                        list(value[star_idx:-remaining_count])
-                        if remaining_count > 0
-                        else list(value[star_idx:])
-                    )
-                    self._set_name_value(star_pattern.name, star_value)
-                    self.current_scope.locals.add(star_pattern.name)
-
-                return True
-        elif isinstance(pattern, ast.MatchMapping):
-            # Mapping pattern: case {"key": value}:
-            if not isinstance(value, dict):
-                return False
-
-            # Check if all required keys are present
-            for key in pattern.keys:
-                key_value = self.visit(key)
-                if key_value not in value:
-                    return False
-
-            # Match each key-pattern pair
-            for key, pat in zip(pattern.keys, pattern.patterns):
-                key_value = self.visit(key)
-                if not self._match_pattern(pat, value[key_value]):
-                    return False
-
-            # Handle rest pattern if present
-            if pattern.rest is not None:
-                rest_dict = {
-                    k: v
-                    for k, v in value.items()
-                    if not any(self.visit(key) == k for key in pattern.keys)
-                }
-                self._set_name_value(pattern.rest, rest_dict)
-                self.current_scope.locals.add(pattern.rest)
-
-            return True
-        elif isinstance(pattern, ast.MatchStar):
-            # Star pattern: case [x, *rest, y]:
-            # This is handled by MatchSequence
-            if pattern.name is not None:
-                self._set_name_value(pattern.name, value)
-                self.current_scope.locals.add(pattern.name)
-            return True
-        elif isinstance(pattern, ast.MatchAs):
-            # AS pattern: case x: or case [x] as lst:
-            if pattern.pattern is not None:
-                if not self._match_pattern(pattern.pattern, value):
-                    return False
-            if pattern.name is not None:
-                self._set_name_value(pattern.name, value)
-                self.current_scope.locals.add(pattern.name)
-            return True
-        elif isinstance(pattern, ast.MatchOr):
-            # OR pattern: case 1 | 2 | 3:
-            for p in pattern.patterns:
-                # Create a temporary scope for each OR pattern
-                # to avoid variable binding conflicts
-                temp_scope = Scope()
-                self.scope_stack.append(temp_scope)
-                try:
-                    if self._match_pattern(p, value):
-                        return True
-                finally:
-                    self.scope_stack.pop()
-            return False
-        elif isinstance(pattern, ast.MatchClass):
-            # Class pattern: case Point(x, y):
-            cls = self.visit(pattern.cls)
-            if not isinstance(value, cls):
-                return False
-
-            # Get positional attributes from __match_args__
-            match_args = getattr(cls, "__match_args__", ())
-            if len(pattern.patterns) > len(match_args):
-                return False
-
-            # Match positional patterns
-            for pat, attr_name in zip(pattern.patterns, match_args):
-                if not self._match_pattern(pat, getattr(value, attr_name)):
-                    return False
-
-            # Match keyword patterns
-            for name, pat in zip(pattern.kwd_attrs, pattern.kwd_patterns):
-                if not hasattr(value, name):
-                    return False
-                if not self._match_pattern(pat, getattr(value, name)):
-                    return False
-
-            return True
-
-        return False
