@@ -40,7 +40,7 @@ def test_namespace_proxy():
 def test_registry_basic_operations():
     """Test basic registry operations."""
 
-    # Test register with no name
+    # Test bind with no name
     class NoName:
         pass  # pragma: no cover
 
@@ -48,27 +48,27 @@ def test_registry_basic_operations():
         ValueError,
         match="No name provided and object has no __name__ attribute",
     ):
-        registry.register()(NoName())
+        registry.bind()(NoName())
 
-    # Test register with existing name
-    @registry.register("test.func")
+    # Test bind with existing name
+    @registry.bind("test.func")
     def test_func():
         pass  # pragma: no cover
 
-    with pytest.raises(ValueError, match="is already registered in namespace"):
+    with pytest.raises(ValueError, match="is already bound in namespace"):
 
-        @registry.register("test.func")
+        @registry.bind("test.func")
         def another_func():
             pass  # pragma: no cover
 
-    # Test register_module with import error
+    # Test bind_module with import error
     with pytest.raises(ImportError):
-        registry.register_module("non_existent_module")
+        registry.bind_module("non_existent_module")
 
-    # Test register_module with existing module
-    registry.register_module("os", "sys_os")
+    # Test bind_module with existing module
+    registry.bind_module("os", "sys_os")
     with pytest.raises(ValueError):
-        registry.register_module("os", "sys_os")
+        registry.bind_module("os", "sys_os")
 
 
 def test_registry_get_operations():
@@ -81,92 +81,90 @@ def test_registry_get_operations():
     with pytest.raises(KeyError):
         registry.get("nested.non_existent")
 
-    # Test is_registered with various inputs
-    @registry.register("test.func")
+    # Test is_bound with various inputs
+    @registry.bind("test.func")
     def test_func():
         pass  # pragma: no cover
 
-    assert registry.is_registered("test.func") is True
-    assert registry.is_registered("non_existent") is False
-    assert registry.is_registered(test_func) is True
+    assert registry.is_bound("test.func") is True
+    assert registry.is_bound("non_existent") is False
+    assert registry.is_bound(test_func) is True
 
 
 def test_registry_nested_namespace():
     """Test registry nested namespace operations."""
-    # Test register with name conflict in nested namespace
+    # Test bind with name conflict in nested namespace
     registry._objects["conflict"] = "value"
     with pytest.raises(ValueError):
-        registry._register_in_namespace(
+        registry._bind_in_namespace(
             "conflict.nested", "new_value", registry._objects
         )
 
-    # Test register with nested namespace creation
-    @registry.register("deep.nested.func")
+    # Test bind with nested namespace creation
+    @registry.bind("deep.nested.func")
     def nested_func():
         pass  # pragma: no cover
 
-    assert registry.is_registered("deep.nested.func") is True
+    assert registry.is_bound("deep.nested.func") is True
 
-    # Test register with nested namespace conflict
+    # Test bind with nested namespace conflict
     registry._objects["ns"] = {"sub": 42}
     with pytest.raises(ValueError):
-        registry._register_in_namespace(
-            "ns.sub.deeper", "value", registry._objects
-        )
+        registry._bind_in_namespace("ns.sub.deeper", "value", registry._objects)
 
 
 def test_registry_callable_objects():
     """Test registry operations with callable objects."""
 
-    # Test register with callable object without __name__
+    # Test bind with callable object without __name__
     class CallableWithoutName:
         def __call__(self):
             pass  # pragma: no cover
 
     with pytest.raises(ValueError):
-        registry.register(CallableWithoutName())
+        registry.bind(CallableWithoutName())
 
-    # Test register with direct function call (no decorator)
+    # Test bind with direct function call (no decorator)
     def direct_func():
         pass  # pragma: no cover
 
-    registry.register("direct")(direct_func)
-    assert registry.is_registered("direct") is True
+    registry.bind("direct")(direct_func)
+    assert registry.is_bound("direct") is True
 
-    # Test register with object that has no __name__ attribute
+    # Test bind with object that has no __name__ attribute
     class CustomCallable:
         def __call__(self, *args, **kwargs):
             pass  # pragma: no cover
 
     obj = CustomCallable()
     with pytest.raises(ValueError):
-        registry.register(obj)
+        registry.bind(obj)
 
 
 def test_registry_module_operations():
     """Test registry module operations."""
-    # Test register_module with nested alias
-    math_module = registry.register_module("math", "math.core")
+    # Test bind_module with nested alias
+    math_module = registry.bind_module("math", "math.core")
     assert registry.get("math.core") == math_module
 
-    # Test register_module with default alias
-    json_module = registry.register_module("json")
+    # Test bind_module with default alias
+    json_module = registry.bind_module("json")
     assert json_module == registry._modules["json"]
 
-    # Test register_module with nested name conflict
+    # Test bind_module with nested name conflict
     registry._objects["math"] = {"nested": 42}
     with pytest.raises(ValueError):
-        registry.register_module("os", "math.nested")
+        registry.bind_module("os", "math.nested")
 
 
 def test_registry_get_all():
     """Test registry get_all functionality."""
 
-    @registry.register("deep.nested.func")
+    @registry.bind("deep.nested.func")
     def nested_func():
         pass  # pragma: no cover
 
-    registry.register_module("os", "sys_os")
+    registry.bind_module("os", "sys_os")
 
     all_objects = registry.get_all()
     assert isinstance(all_objects["deep"], NamespaceProxy)
@@ -176,90 +174,90 @@ def test_registry_get_all():
 def test_registry_non_function_objects():
     """Test registry operations with non-function objects."""
 
-    # Test register with non-function object
+    # Test bind with non-function object
     class TestClass:
         pass  # pragma: no cover
 
     obj = TestClass()
-    registry.register("test.obj")(obj)
-    assert registry.is_registered(obj) is True
+    registry.bind("test.obj")(obj)
+    assert registry.is_bound(obj) is True
 
-    # Test is_registered with non-function object
+    # Test is_bound with non-function object
     class NonCallable:
         pass  # pragma: no cover
 
     obj = NonCallable()
-    registry.register("non_callable")(obj)
-    assert registry.is_registered(obj) is True
+    registry.bind("non_callable")(obj)
+    assert registry.is_bound(obj) is True
 
-    # Test is_registered with non-function object in _objects
+    # Test is_bound with non-function object in _objects
     registry._objects["non_func"] = 42
-    assert registry.is_registered("non_func") is True
+    assert registry.is_bound("non_func") is True
 
 
 def test_registry_nested_name_conflicts():
     """Test registry nested name conflict handling."""
-    # Test register with nested name that exists as a non-dict
+    # Test bind with nested name that exists as a non-dict
     registry._objects["parent"] = 42
     with pytest.raises(ValueError):
-        registry._register_object("parent.child", lambda: None)
+        registry._bind_object("parent.child", lambda: None)
 
-    # Test register with name conflict in nested namespace
+    # Test bind with name conflict in nested namespace
     registry._objects["ns2"] = {"sub": {}}
     registry._objects["ns2"]["sub"]["func"] = lambda: None
     with pytest.raises(ValueError):
-        registry._register_object("ns2.sub.func", lambda: None)
+        registry._bind_object("ns2.sub.func", lambda: None)
 
-    # Test register with name conflict in intermediate namespace
+    # Test bind with name conflict in intermediate namespace
     registry._objects["conflict2"] = {"nested": 42}
     with pytest.raises(ValueError):
-        registry._register_object("conflict2.nested.func", lambda: None)
+        registry._bind_object("conflict2.nested.func", lambda: None)
 
 
 def test_registry_nested_name_access():
     """Test registry nested name access."""
 
-    # Test is_registered with nested name in _objects
+    # Test is_bound with nested name in _objects
     def inner_func():
         pass  # pragma: no cover
 
     setattr(inner_func, "__is_expressions_type__", True)
     registry._objects["nested_obj"] = {"func": inner_func}
-    assert registry.is_registered("nested_obj.func") is True
+    assert registry.is_bound("nested_obj.func") is True
 
-    # Test is_registered with non-function object in nested namespace
+    # Test is_bound with non-function object in nested namespace
     registry._objects["nested_obj2"] = {"value": 42}
-    assert registry.is_registered("nested_obj2.value") is True
+    assert registry.is_bound("nested_obj2.value") is True
 
-    # Test is_registered with function in nested namespace
+    # Test is_bound with function in nested namespace
     def inner_func2():
         pass  # pragma: no cover
 
     registry._objects["nested_obj3"] = {"func": inner_func2}
-    assert registry.is_registered("nested_obj3.func") is False
+    assert registry.is_bound("nested_obj3.func") is False
 
 
 def test_registry_non_existent_names():
     """Test registry operations with non-existent names."""
-    # Test is_registered with non-existent nested name
-    assert registry.is_registered("non_existent.func") is False
+    # Test is_bound with non-existent nested name
+    assert registry.is_bound("non_existent.func") is False
 
-    # Test is_registered with non-existent intermediate namespace
-    assert registry.is_registered("non_existent.nested.func") is False
+    # Test is_bound with non-existent intermediate namespace
+    assert registry.is_bound("non_existent.nested.func") is False
 
-    # Test is_registered with non-existent part in nested namespace
+    # Test is_bound with non-existent part in nested namespace
     registry._objects["partial"] = {"nested": {}}
-    assert registry.is_registered("partial.nested.non_existent") is False
+    assert registry.is_bound("partial.nested.non_existent") is False
 
 
 def test_registry_type_errors():
     """Test registry type error handling."""
-    # Test register with non-dict intermediate namespace
+    # Test bind with non-dict intermediate namespace
     registry._objects["invalid"] = 42
     with pytest.raises(ValueError):
-        registry._register_object("invalid.nested.func", lambda: None)
+        registry._bind_object("invalid.nested.func", lambda: None)
 
-    # Test is_registered with non-dict intermediate namespace
+    # Test get with non-dict intermediate namespace
     with pytest.raises(TypeError):
         registry.get("invalid.nested.func")
 
@@ -736,14 +734,14 @@ def test_registry_initialization():
     reg.reset()
 
 
-def test_registry_register_errors():
-    """Test error handling in register method."""
+def test_registry_bind_errors():
+    """Test error handling in bind method."""
     reg = Registry()
     error1 = ""
     error2 = ""
 
     try:
-        reg.register()(None)  # Should raise ValueError
+        reg.bind()(None)  # Should raise ValueError
     except ValueError as e:
         error1 = str(e)
 
@@ -753,7 +751,7 @@ def test_registry_register_errors():
 
     obj = NoName()
     try:
-        reg.register()(obj)  # Should raise ValueError
+        reg.bind()(obj)  # Should raise ValueError
     except ValueError as e:
         error2 = str(e)
 
@@ -761,21 +759,21 @@ def test_registry_register_errors():
     assert "No name provided and object has no __name__ attribute" in error2
 
 
-def test_registry_register_module_errors():
-    """Test error handling in register_module method."""
+def test_registry_bind_module_errors():
+    """Test error handling in bind_module method."""
     reg = Registry()
     error = ""
 
     try:
-        reg.register_module("non_existent_module")  # Should raise ImportError
+        reg.bind_module("non_existent_module")  # Should raise ImportError
     except ImportError as e:
         error = str(e)
 
     assert "No module named" in error
 
 
-def test_registry_get_all_errors():
-    """Test error handling in get_all method."""
+def test_registry_get_errors():
+    """Test error handling in get method."""
     reg = Registry()
     error = ""
 

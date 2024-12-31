@@ -11,8 +11,6 @@ from monic.expressions.parser import ExpressionsParser
 from monic.expressions.registry import (
     monic_bind,
     monic_bind_module,
-    register,
-    register_module,
 )
 
 
@@ -26,6 +24,4 @@ __all__ = [
     # Registry
     "monic_bind",
     "monic_bind_module",
-    "register",
-    "register_module",
 ]

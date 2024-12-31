@@ -118,6 +118,8 @@ T = t.TypeVar("T", list, set)
 
 
 class ExpressionsInterpreter(ast.NodeVisitor):
+    """Interpreter for Monic expressions."""
+
     def __init__(self, context: ExpressionsContext | None = None) -> None:
         """Initialize the interpreter.
 
@@ -177,7 +179,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "SecurityError": SecurityError,
         }
 
-        # Add registered objects to global environment
+        # Add bound objects in registry to global environment
         self.global_env.update(registry.get_all())
 
         # Add built-in decorators
@@ -1657,8 +1659,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         if not callable(func):
             raise TypeError(f"'{type(func).__name__}' object is not callable")
 
-        # Handle registered functions
-        if registry.is_registered(func):
+        # Handle bound functions
+        if registry.is_bound(func):
             return func(*pos_args, **kwargs)
 
         # Handle bound methods
@@ -2121,8 +2123,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         Returns:
             Whether the function should be bound
         """
-        # Check if this is a registered function
-        if registry.is_registered(func):
+        # Check if this is a bound function
+        if registry.is_bound(func):
             return False
 
         # Check if this is a static method

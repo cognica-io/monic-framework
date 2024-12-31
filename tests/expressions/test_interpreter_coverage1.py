@@ -31,7 +31,7 @@ def test_complex_method_handling():
     Tests:
     1. Property descriptor access and modification
     2. Method binding and execution
-    3. Static method calls on both registered and unregistered classes
+    3. Static method calls on both bound and unbound classes
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -83,7 +83,7 @@ result
     result = interpreter.execute(tree)
     assert result == 10
 
-    # Test registered class static method
+    # Test bound class static method
     code = """
 result = test.TestClass.static_method()
 result
@@ -328,15 +328,13 @@ def test_registry_error_paths():
     """Test error paths in the registry module.
 
     Tests:
-    1. Registering invalid names (namespace conflicts)
-    2. Duplicate registration attempts
+    1. Binding invalid names (namespace conflicts)
+    2. Duplicate binding attempts
     3. Accessing non-existent items
     4. Accessing non-existent namespaces
     """
-    # Test registering invalid names
-    with pytest.raises(
-        ValueError, match="is already registered as a non-namespace"
-    ):
+    # Test binding invalid names
+    with pytest.raises(ValueError, match="is already bound as a non-namespace"):
 
         @monic_bind("test")
         def test_func():
@@ -346,12 +344,12 @@ def test_registry_error_paths():
         def test_func2():
             return 43  # pragma: no cover
 
-    # Test duplicate registration
+    # Test duplicate binding
     @monic_bind("math.add")
     def add1():
         return 42  # pragma: no cover
 
-    with pytest.raises(ValueError, match="already registered"):
+    with pytest.raises(ValueError, match="already bound"):
 
         @monic_bind("math.add")
         def add2():

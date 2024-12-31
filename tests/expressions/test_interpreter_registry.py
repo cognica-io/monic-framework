@@ -24,8 +24,8 @@ def reset_registry():
     yield
 
 
-def test_registered_function():
-    """Test using registered functions."""
+def test_bound_function():
+    """Test using bound functions."""
 
     @monic_bind
     def custom_add(x, y):  # pylint: disable=unused-variable
@@ -49,8 +49,8 @@ def test_registered_function():
     assert interpreter.get_name_value("result2") == 24
 
 
-def test_registered_class():
-    """Test using registered class."""
+def test_bound_class():
+    """Test using bound class."""
 
     @monic_bind
     class Point:  # pylint: disable=unused-variable
@@ -74,8 +74,8 @@ def test_registered_class():
     assert interpreter.get_name_value("distance") == 5.0
 
 
-def test_register_without_name():
-    """Test registering an object without explicit name."""
+def test_bind_without_name():
+    """Test binding an object without explicit name."""
 
     @monic_bind
     def test_func():  # pylint: disable=unused-variable
@@ -89,8 +89,8 @@ def test_register_without_name():
     assert interpreter.get_name_value("result") == 42
 
 
-def test_register_with_name():
-    """Test registering an object with explicit name."""
+def test_bind_with_name():
+    """Test binding an object with explicit name."""
 
     @monic_bind("answer")
     def get_answer():  # pylint: disable=unused-variable
@@ -104,8 +104,8 @@ def test_register_with_name():
     assert interpreter.get_name_value("result") == 42
 
 
-def test_register_with_nested_name():
-    """Test registering objects with nested names."""
+def test_bind_with_nested_name():
+    """Test binding objects with nested names."""
 
     @monic_bind("math.functions.add")
     def add(x, y):  # pylint: disable=unused-variable
@@ -136,41 +136,41 @@ def test_register_with_nested_name():
     assert abs(interpreter.get_name_value("result4") - 2.71828) < 1e-5
 
 
-def test_register_nested_name_conflict():
-    """Test that registering conflicting nested names raises an error."""
+def test_bind_nested_name_conflict():
+    """Test that binding conflicting nested names raises an error."""
 
     @monic_bind("math.functions.add")
     def add1(x, y):  # pylint: disable=unused-variable
         return x + y  # pragma: no cover
 
-    # Try to register another function with the same nested name
+    # Try to bind another function with the same nested name
     with pytest.raises(ValueError) as exc_info:
 
         @monic_bind("math.functions.add")
         def add2(x, y):  # pylint: disable=unused-variable
             return x + y  # pragma: no cover
 
-    assert "is already registered in namespace" in str(exc_info.value)
+    assert "is already bound in namespace" in str(exc_info.value)
 
 
-def test_register_nested_name_non_namespace_conflict():
+def test_bind_nested_name_non_namespace_conflict():
     """Test conflict between nested name and non-namespace object."""
 
     @monic_bind("math")
     def math_func():  # pylint: disable=unused-variable
         return 42  # pragma: no cover
 
-    # Try to register a function in math.functions namespace
+    # Try to bind another function with the same nested name
     with pytest.raises(ValueError) as exc_info:
 
         @monic_bind("math.functions.add")
         def add(x, y):  # pylint: disable=unused-variable
             return x + y  # pragma: no cover
 
-    assert "is already registered as a non-namespace" in str(exc_info.value)
+    assert "is already bound as a non-namespace" in str(exc_info.value)
 
 
-def test_register_both_syntaxes():
+def test_bind_both_syntaxes():
     """Test both decorator syntaxes work correctly."""
 
     @monic_bind
@@ -193,7 +193,7 @@ def test_register_both_syntaxes():
     assert interpreter.get_name_value("result2") == 2
 
 
-def test_register_class_both_syntaxes():
+def test_bind_class_both_syntaxes():
     """Test both decorator syntaxes work correctly with classes."""
 
     @monic_bind
@@ -219,7 +219,7 @@ def test_register_class_both_syntaxes():
 
 
 def test_bind_module():
-    """Test registering and using a module."""
+    """Test binding and using a module."""
     # Bind math module
     monic_bind_module("math")
 
@@ -238,7 +238,7 @@ def test_bind_module():
 
 
 def test_bind_module_with_alias():
-    """Test registering a module with an alias."""
+    """Test binding a module with an alias."""
     # Bind random module with alias
     monic_bind_module("random", alias="rand")
 
@@ -256,7 +256,7 @@ def test_bind_module_with_alias():
 
 
 def test_bind_module_submodule():
-    """Test registering a module with submodules."""
+    """Test binding a module with submodules."""
     # Bind collections.abc module
     monic_bind_module("collections.abc", alias="collabc")
 
@@ -273,7 +273,7 @@ def test_bind_module_submodule():
 
 
 def test_bind_module_with_nested_name():
-    """Test registering modules with nested names."""
+    """Test binding modules with nested names."""
     # Bind urllib and its parse submodule
     monic_bind_module("urllib", alias="url")
     monic_bind_module("urllib.parse", alias="url.parse")
@@ -296,17 +296,17 @@ def test_bind_module_with_nested_name():
     assert parsed.path == "/path"
 
 
-def test_register_non_nested_name_conflict():
+def test_bind_non_nested_name_conflict():
     """
-    Test that registering a non-nested name that already exists raises an error.
+    Test that binding a non-nested name that already exists raises an error.
     """
     namespace = {}
-    registry._register_in_namespace("test", 42, namespace)
+    registry._bind_in_namespace("test", 42, namespace)
 
     with pytest.raises(ValueError) as exc_info:
-        registry._register_in_namespace("test", 43, namespace)
+        registry._bind_in_namespace("test", 43, namespace)
 
-    assert "Name 'test' is already registered" in str(exc_info.value)
+    assert "Name 'test' is already bound" in str(exc_info.value)
 
 
 def test_namespace_proxy_attribute_error():
@@ -323,13 +323,13 @@ def test_namespace_proxy_attribute_error():
     assert "'non_existent' not found in namespace" in str(exc_info.value)
 
 
-def test_register_object_without_name():
+def test_bind_object_without_name():
     """
-    Test that registering an object without a name and no __name__ attribute
+    Test that binding an object without a name and no __name__ attribute
     raises ValueError.
     """
     with pytest.raises(ValueError) as exc_info:
-        registry.register()(object())
+        registry.bind()(object())
 
     assert "No name provided and object has no __name__ attribute" in str(
         exc_info.value
@@ -337,7 +337,7 @@ def test_register_object_without_name():
 
 
 def test_bind_module_import_error():
-    """Test that registering a non-existent module raises ImportError."""
+    """Test that binding a non-existent module raises ImportError."""
     with pytest.raises(ImportError) as exc_info:
         monic_bind_module("non_existent_module")
 
@@ -347,13 +347,13 @@ def test_bind_module_import_error():
 
 
 def test_bind_module_duplicate():
-    """Test that registering the same module twice raises ValueError."""
+    """Test that binding the same module twice raises ValueError."""
     monic_bind_module("math")
 
     with pytest.raises(ValueError) as exc_info:
         monic_bind_module("math")
 
-    assert "Module 'math' is already registered" in str(exc_info.value)
+    assert "Module 'math' is already bound" in str(exc_info.value)
 
 
 def test_get_all_with_nested_namespaces():
@@ -374,9 +374,9 @@ def test_get_all_with_nested_namespaces():
     assert all_objects["math"].constants.PI == 3.14159
 
 
-def test_register_callable_without_name():
+def test_bind_callable_without_name():
     """
-    Test that registering a callable without __name__ attribute raises
+    Test that binding a callable without __name__ attribute raises
     ValueError.
     """
 
@@ -388,16 +388,16 @@ def test_register_callable_without_name():
     callable_obj = CallableWithoutName()
 
     with pytest.raises(ValueError) as exc_info:
-        registry.register(callable_obj)
+        registry.bind(callable_obj)
 
     assert "Object has no __name__ attribute and no name was provided" in str(
         exc_info.value
     )
 
 
-def test_is_registered_with_function():
+def test_is_bound_with_function():
     """
-    Test is_registered with a function that has __is_expressions_type__
+    Test is_bound with a function that has __is_expressions_type__
     attribute.
     """
 
@@ -406,11 +406,11 @@ def test_is_registered_with_function():
 
     setattr(test_func, "__is_expressions_type__", True)
 
-    assert registry.is_registered(test_func)
+    assert registry.is_bound(test_func)
 
 
 def test_get_all_with_modules():
-    """Test that get_all properly includes registered modules."""
+    """Test that get_all properly includes bound modules."""
     monic_bind_module("math", alias="math_alias")
     monic_bind_module("random")
 
@@ -419,55 +419,53 @@ def test_get_all_with_modules():
     assert "random" in all_objects
 
 
-def test_register_with_invalid_name():
-    """Test that registering with an invalid name type raises ValueError."""
+def test_bind_with_invalid_name():
+    """Test that binding with an invalid name type raises ValueError."""
 
     class TestObject:
         pass  # pragma: no cover
 
     with pytest.raises(ValueError) as exc_info:
-        registry.register()(TestObject())  # Pass an object without __name__
+        registry.bind()(TestObject())  # Pass an object without __name__
 
     assert "No name provided and object has no __name__ attribute" in str(
         exc_info.value
     )
 
 
-def test_register_in_namespace_type_error():
+def test_bind_in_namespace_type_error():
     """
-    Test that registering in namespace with a non-string name raises TypeError.
+    Test that binding in namespace with a non-string name raises TypeError.
     """
     namespace = {}
     with pytest.raises(TypeError) as exc_info:
         # Pass a non-string name
-        registry._register_in_namespace(123, "value", namespace)  # type: ignore
+        registry._bind_in_namespace(123, "value", namespace)  # type: ignore
 
     assert "Name must be a string" in str(exc_info.value)
 
 
-def test_register_in_namespace_empty_name():
+def test_bind_in_namespace_empty_name():
     """
-    Test that registering in namespace with an empty name raises ValueError.
+    Test that binding in namespace with an empty name raises ValueError.
     """
     namespace = {}
     with pytest.raises(ValueError) as exc_info:
-        registry._register_in_namespace(
-            "", "value", namespace
-        )  # Pass an empty string
+        registry._bind_in_namespace(
+            "", "value", namespace  # Pass an empty string
+        )
 
     assert "Name cannot be empty" in str(exc_info.value)
 
 
-def test_is_registered_with_non_function():
-    """Test is_registered with a non-function object."""
+def test_is_bound_with_non_function():
+    """Test is_bound with a non-function object."""
 
     class TestClass:
         pass
 
     obj = TestClass()
-    assert registry.is_registered(
-        obj
-    )  # Should return True for non-function objects
+    assert registry.is_bound(obj)  # Should return True for non-function objects
 
 
 def test_get_all_with_mixed_content():
@@ -495,15 +493,15 @@ def test_get_all_with_mixed_content():
     assert callable(all_objects["direct_func"])
 
 
-def test_is_registered_with_string_name():
-    """Test is_registered with a string name."""
+def test_is_bound_with_string_name():
+    """Test is_bound with a string name."""
 
     @monic_bind("test.func")
     def test_func():  # pylint: disable=unused-variable
         pass  # pragma: no cover
 
-    assert registry.is_registered("test.func")
-    assert not registry.is_registered("non.existent.func")
+    assert registry.is_bound("test.func")
+    assert not registry.is_bound("non.existent.func")
 
 
 def test_get_all_with_non_dict_values():
@@ -525,19 +523,19 @@ def test_get_all_with_non_dict_values():
     assert hasattr(all_objects["math"], "sqrt")  # Module
 
 
-def test_register_in_namespace_with_empty_parts():
-    """Test registering in namespace with empty parts in the name."""
+def test_bind_in_namespace_with_empty_parts():
+    """Test binding in namespace with empty parts in the name."""
     namespace = {}
     with pytest.raises(ValueError) as exc_info:
-        registry._register_in_namespace("test..func", "value", namespace)
+        registry._bind_in_namespace("test..func", "value", namespace)
 
     assert "Name cannot contain empty parts" in str(exc_info.value)
 
 
-def test_register_in_nested_namespace_with_empty_parts():
-    """Test registering in nested namespace with empty parts in the name."""
+def test_bind_in_nested_namespace_with_empty_parts():
+    """Test binding in nested namespace with empty parts in the name."""
     namespace = {"test": {"nested": {}}}
     with pytest.raises(ValueError) as exc_info:
-        registry._register_in_namespace("test.nested..func", "value", namespace)
+        registry._bind_in_namespace("test.nested..func", "value", namespace)
 
     assert "Name cannot contain empty parts" in str(exc_info.value)

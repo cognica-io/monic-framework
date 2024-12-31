@@ -39,18 +39,77 @@ class Registry:
         self._objects = {}
         self._modules = {}
 
-    def _register_in_namespace(
+    def bind(
+        self, name_or_func: str | t.Callable | None = None
+    ) -> t.Callable[[t.Any], t.Any] | t.Any:
+        """Bind an object with a given name.
+
+        This decorator can be used in two ways:
+            1. With parentheses: @monic_bind() or @monic_bind("custom.name")
+            2. Without parentheses: @monic_bind
+
+        Args:
+            name_or_func: Either a string name to bind under (can include dots
+                          for nesting), or the function itself when used as
+                          @monic_bind without parentheses.
+
+        Returns:
+            Either a decorator function or the decorated object itself.
+        """
+        # Case 1: @monic_bind (no parentheses)
+        if callable(name_or_func):
+            bind_name = getattr(name_or_func, "__name__", None)
+            if bind_name is None:
+                raise ValueError(
+                    "Object has no __name__ attribute and no name was provided"
+                )
+            return self._bind_object(bind_name, name_or_func)
+
+        # Case 2: @monic_bind() or @monic_bind("custom.name")
+        def decorator(obj: t.Any) -> t.Any:
+            bind_name = name_or_func or getattr(obj, "__name__", None)
+            if bind_name is None:
+                raise ValueError(
+                    "No name provided and object has no __name__ attribute"
+                )
+            return self._bind_object(bind_name, obj)
+
+        return decorator
+
+    def is_bound(self, name_or_obj: str | t.Any) -> bool:
+        """Check if an object is bound.
+
+        Args:
+            name_or_obj: The name or object to check
+
+        Returns:
+            True if the object is bound, False otherwise
+        """
+        if isinstance(name_or_obj, str):
+            try:
+                obj = self.get(name_or_obj)
+            except KeyError:
+                return False
+        else:
+            obj = name_or_obj
+
+        if isinstance(obj, types.FunctionType):
+            return hasattr(obj, "__is_expressions_type__")
+
+        return True
+
+    def _bind_in_namespace(
         self,
         name: str,
         obj: t.Any,
         namespace: dict[str, t.Any],
     ) -> None:
-        """Register an object in the given namespace, supporting nested names.
+        """Bind an object in the given namespace, supporting nested names.
 
         Args:
-            name: The name to register under, can include dots for nesting.
-            obj: The object to register.
-            namespace: The namespace dictionary to register in.
+            name: The name to bind under, can include dots for nesting.
+            obj: The object to bind.
+            namespace: The namespace dictionary to bind in.
 
         Raises:
             ValueError: If there's a naming conflict or if the name is empty.
@@ -77,91 +136,32 @@ class Registry:
                 elif not isinstance(current_dict[part], dict):
                     raise ValueError(
                         f"Cannot create nested name '{name}': "
-                        f"'{part}' is already registered as a non-namespace"
+                        f"'{part}' is already bound as a non-namespace"
                     )
                 current_dict = current_dict[part]
 
-            # Register the object in the final namespace
+            # Bind the object in the final namespace
             final_name = parts[-1]
             if final_name in current_dict:
                 raise ValueError(
-                    f"Name '{final_name}' is already registered in "
+                    f"Name '{final_name}' is already bound in "
                     f"namespace '{'.'.join(parts[:-1])}'"
                 )
             current_dict[final_name] = obj
         else:
             if name in namespace:
-                raise ValueError(f"Name '{name}' is already registered")
+                raise ValueError(f"Name '{name}' is already bound")
             namespace[name] = obj
 
-    def register(
-        self, name_or_func: str | t.Callable | None = None
-    ) -> t.Callable[[t.Any], t.Any] | t.Any:
-        """Register an object with a given name.
-
-        This decorator can be used in two ways:
-            1. With parentheses: @register() or @register("custom.name")
-            2. Without parentheses: @register
+    def _bind_object(self, name: str, obj: t.Any) -> t.Any:
+        """Bind an object with a given name.
 
         Args:
-            name_or_func: Either a string name to register under (can include
-                          dots for nesting), or the function itself when used
-                          as @register without parentheses.
+            name: The name to bind the object under
+            obj: The object to bind
 
         Returns:
-            Either a decorator function or the decorated object itself.
-        """
-        # Case 1: @register (no parentheses)
-        if callable(name_or_func):
-            register_name = getattr(name_or_func, "__name__", None)
-            if register_name is None:
-                raise ValueError(
-                    "Object has no __name__ attribute and no name was provided"
-                )
-            return self._register_object(register_name, name_or_func)
-
-        # Case 2: @register() or @register("custom.name")
-        def decorator(obj: t.Any) -> t.Any:
-            register_name = name_or_func or getattr(obj, "__name__", None)
-            if register_name is None:
-                raise ValueError(
-                    "No name provided and object has no __name__ attribute"
-                )
-            return self._register_object(register_name, obj)
-
-        return decorator
-
-    def is_registered(self, name_or_obj: str | t.Any) -> bool:
-        """Check if an object is registered.
-
-        Args:
-            name_or_obj: The name or object to check
-
-        Returns:
-            True if the object is registered, False otherwise
-        """
-        if isinstance(name_or_obj, str):
-            try:
-                obj = self.get(name_or_obj)
-            except KeyError:
-                return False
-        else:
-            obj = name_or_obj
-
-        if isinstance(obj, types.FunctionType):
-            return hasattr(obj, "__is_expressions_type__")
-
-        return True
-
-    def _register_object(self, name: str, obj: t.Any) -> t.Any:
-        """Register an object with a given name.
-
-        Args:
-            name: The name to register the object under
-            obj: The object to register
-
-        Returns:
-            The registered object
+            The bound object
 
         Raises:
             ValueError: If there's a naming conflict
@@ -178,31 +178,31 @@ class Registry:
                 current[part] = {}
             elif not isinstance(current[part], dict):
                 raise ValueError(
-                    f"'{part}' is already registered as a non-namespace"
+                    f"'{part}' is already bound as a non-namespace"
                 )
             current = current[part]
 
         # Check for conflicts
         if parts[-1] in current:
-            raise ValueError(f"'{name}' is already registered in namespace")
+            raise ValueError(f"'{name}' is already bound in namespace")
 
         # Store the object in the registry
         current[parts[-1]] = obj
 
-        # Mark functions as registered
+        # Mark functions as bound
         if isinstance(obj, types.FunctionType):
             setattr(obj, "__is_expressions_type__", True)
 
         return obj
 
-    def register_module(
+    def bind_module(
         self, module_name: str, alias: str | None = None
     ) -> types.ModuleType:
-        """Register a Python module in the registry.
+        """Bind a Python module in the registry.
 
         Args:
-            module_name: The name of the module to import and register.
-            alias: Optional alias to register the module under.
+            module_name: The name of the module to import and bind.
+            alias: Optional alias to bind the module under.
                   If not provided, uses the last part of the module name.
                   Can include dots for nested names (e.g., 'np.random').
 
@@ -211,7 +211,7 @@ class Registry:
 
         Raises:
             ImportError: If the module cannot be imported.
-            ValueError: If the module is already registered or if the alias
+            ValueError: If the module is already bound or if the alias
                        conflicts with existing names.
         """
         try:
@@ -223,17 +223,15 @@ class Registry:
 
         # Use the last part of the module name if no alias is provided
         # e.g., 'numpy.random' -> 'random'
-        register_name = alias or module_name.split(".")[-1]
+        bind_name = alias or module_name.split(".")[-1]
 
         # Handle nested names in alias (e.g., 'np.random')
-        if "." in register_name:
-            self._register_in_namespace(register_name, module, self._objects)
+        if "." in bind_name:
+            self._bind_in_namespace(bind_name, module, self._objects)
         else:
-            if register_name in self._modules:
-                raise ValueError(
-                    f"Module '{register_name}' is already registered"
-                )
-            self._modules[register_name] = module
+            if bind_name in self._modules:
+                raise ValueError(f"Module '{bind_name}' is already bound")
+            self._modules[bind_name] = module
 
         return module
 
@@ -247,30 +245,30 @@ class Registry:
             2. Without parentheses: @bind_default
 
         Args:
-            name_or_func: Either a string name to register under (can include
-                          dots for nesting), or the function itself when used
-                          as @bind_default without parentheses.
+            name_or_func: Either a string name to bind under (can include dots
+                          for nesting), or the function itself when used as
+                          @bind_default without parentheses.
 
         Returns:
             Either a decorator function or the decorated object itself.
         """
         # Case 1: @bind_default (no parentheses)
         if callable(name_or_func):
-            register_name = getattr(name_or_func, "__name__", None)
-            if register_name is None:
+            bind_name = getattr(name_or_func, "__name__", None)
+            if bind_name is None:
                 raise ValueError(
                     "Object has no __name__ attribute and no name was provided"
                 )
-            return self._bind_default_object(register_name, name_or_func)
+            return self._bind_default_object(bind_name, name_or_func)
 
         # Case 2: @bind_default() or @bind_default("custom.name")
         def decorator(obj: t.Any) -> t.Any:
-            register_name = name_or_func or getattr(obj, "__name__", None)
-            if register_name is None:
+            bind_name = name_or_func or getattr(obj, "__name__", None)
+            if bind_name is None:
                 raise ValueError(
                     "No name provided and object has no __name__ attribute"
                 )
-            return self._bind_default_object(register_name, obj)
+            return self._bind_default_object(bind_name, obj)
 
         return decorator
 
@@ -278,11 +276,11 @@ class Registry:
         """Bind an object with a given name to the default registry.
 
         Args:
-            name: The name to register the object under
-            obj: The object to register
+            name: The name to bind the object under
+            obj: The object to bind
 
         Returns:
-            The registered object
+            The bound object
 
         Raises:
             ValueError: If there's a naming conflict
@@ -299,18 +297,18 @@ class Registry:
                 current[part] = {}
             elif not isinstance(current[part], dict):
                 raise ValueError(
-                    f"'{part}' is already registered as a non-namespace"
+                    f"'{part}' is already bound as a non-namespace"
                 )
             current = current[part]
 
         # Check for conflicts
         if parts[-1] in current:
-            raise ValueError(f"'{name}' is already registered in namespace")
+            raise ValueError(f"'{name}' is already bound in namespace")
 
         # Store the object in the registry
         current[parts[-1]] = obj
 
-        # Mark functions as registered
+        # Mark functions as bound
         if isinstance(obj, types.FunctionType):
             setattr(obj, "__is_expressions_type__", True)
 
@@ -322,8 +320,8 @@ class Registry:
         """Bind a Python module to the default registry.
 
         Args:
-            module_name: The name of the module to import and register.
-            alias: Optional alias to register the module under.
+            module_name: The name of the module to import and bind.
+            alias: Optional alias to bind the module under.
                   If not provided, uses the last part of the module name.
                   Can include dots for nested names (e.g., 'np.random').
 
@@ -332,7 +330,7 @@ class Registry:
 
         Raises:
             ImportError: If the module cannot be imported.
-            ValueError: If the module is already registered or if the alias
+            ValueError: If the module is already bound or if the alias
                        conflicts with existing names.
         """
         try:
@@ -344,27 +342,23 @@ class Registry:
 
         # Use the last part of the module name if no alias is provided
         # e.g., 'numpy.random' -> 'random'
-        register_name = alias or module_name.split(".")[-1]
+        bind_name = alias or module_name.split(".")[-1]
 
         # Handle nested names in alias (e.g., 'np.random')
-        if "." in register_name:
-            self._register_in_namespace(
-                register_name, module, self._default_objects
-            )
+        if "." in bind_name:
+            self._bind_in_namespace(bind_name, module, self._default_objects)
         else:
-            if register_name in self._default_modules:
-                raise ValueError(
-                    f"Module '{register_name}' is already registered"
-                )
-            self._default_modules[register_name] = module
+            if bind_name in self._default_modules:
+                raise ValueError(f"Module '{bind_name}' is already bound")
+            self._default_modules[bind_name] = module
 
         return module
 
     def get_all(self) -> dict[str, t.Any]:
-        """Get all registered objects and modules.
+        """Get all bound objects and modules.
 
         Returns:
-            Dictionary of registered objects and modules, with nested namespaces
+            Dictionary of bound objects and modules, with nested namespaces
             wrapped in NamespaceProxy objects.
         """
         result: dict[str, t.Any] = {}
@@ -407,7 +401,7 @@ class Registry:
             name: The name to get the object for
 
         Returns:
-            The registered object
+            The bound object
 
         Raises:
             KeyError: If the name is not found in the registry
@@ -423,17 +417,11 @@ class Registry:
 # Global registry instance
 registry = Registry()
 
-# Decorator for registering objects
-register = registry.register
-
-# Function for registering modules
-register_module = registry.register_module
-
 # Decorator for binding objects to the registry
-monic_bind = registry.register
+monic_bind = registry.bind
 
 # Function for binding modules to the registry
-monic_bind_module = registry.register_module
+monic_bind_module = registry.bind_module
 
 # Decorator for binding objects to the default registry
 monic_bind_default = registry.bind_default

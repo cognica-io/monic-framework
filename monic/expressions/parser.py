@@ -9,6 +9,8 @@ import textwrap
 
 
 class ExpressionsParser:
+    """Parser for Monic expressions."""
+
     def __init__(self) -> None:
         pass
 
