@@ -7,7 +7,3 @@
 
 class SecurityError(Exception):
     """Raised when dangerous operations are detected."""
-
-
-class UnsupportedUnpackingError(Exception):
-    """Raised when an unsupported unpacking pattern is encountered."""

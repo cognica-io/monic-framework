@@ -11,7 +11,6 @@ import pytest
 from monic.expressions import (
     ExpressionsParser,
     ExpressionsInterpreter,
-    UnsupportedUnpackingError,
 )
 from monic.expressions.registry import registry, NamespaceProxy, Registry
 
@@ -293,16 +292,15 @@ try:
     a, b = [1, 2, 3]
     result = "should not reach here"
 except ValueError as e:
-    if str(e) == "Too many values to unpack":
+    if str(e) == "too many values to unpack (expected 2)":
         result = "too many values"
     else:
         result = str(e)
 result
 """
     tree = parser.parse(code)
-    with pytest.raises(UnsupportedUnpackingError) as exc_info:
-        interpreter.execute(tree)
-    assert str(exc_info.value) == "Too many values to unpack"
+    result = interpreter.execute(tree)
+    assert result == "too many values"
 
     # Test not enough values
     code = """
@@ -310,16 +308,15 @@ try:
     a, b, c = [1, 2]
     result = "should not reach here"
 except ValueError as e:
-    if str(e) == "Not enough values to unpack":
+    if str(e) == "not enough values to unpack (expected 3, got 2)":
         result = "not enough values"
     else:
         result = str(e)
 result
 """
     tree = parser.parse(code)
-    with pytest.raises(UnsupportedUnpackingError) as exc_info:
-        interpreter.execute(tree)
-    assert str(exc_info.value) == "Not enough values to unpack"
+    result = interpreter.execute(tree)
+    assert result == "not enough values"
 
 
 def test_match_basic_sequence():
@@ -432,12 +429,10 @@ def test_unpacking_with_multiple_starred_expressions():
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
-    with pytest.raises(UnsupportedUnpackingError) as exc_info:
+    with pytest.raises(SyntaxError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert "Cannot use multiple starred expressions in assignment" in str(
-        exc_info.value
-    )
+    assert "multiple starred expressions in assignment" in str(exc_info.value)
 
 
 def test_unpacking_with_insufficient_values():
@@ -449,10 +444,10 @@ def test_unpacking_with_insufficient_values():
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
-    with pytest.raises(UnsupportedUnpackingError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert "Not enough values to unpack" in str(exc_info.value)
+    assert "not enough values to unpack" in str(exc_info.value)
 
 
 def test_unpacking_with_too_many_values():
@@ -464,10 +459,10 @@ def test_unpacking_with_too_many_values():
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
-    with pytest.raises(UnsupportedUnpackingError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert "Too many values to unpack" in str(exc_info.value)
+    assert "too many values to unpack" in str(exc_info.value)
 
 
 def test_unpacking_non_iterable():
@@ -479,10 +474,10 @@ def test_unpacking_non_iterable():
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
-    with pytest.raises(UnsupportedUnpackingError) as exc_info:
+    with pytest.raises(TypeError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert "Cannot unpack non-iterable value" in str(exc_info.value)
+    assert "cannot unpack non-iterable int object" in str(exc_info.value)
 
 
 def test_unpacking_with_attribute_target():

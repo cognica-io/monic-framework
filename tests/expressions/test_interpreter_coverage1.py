@@ -11,7 +11,6 @@ import pytest
 from monic.expressions import (
     ExpressionsParser,
     ExpressionsInterpreter,
-    UnsupportedUnpackingError,
     SecurityError,
     monic_bind,
 )
@@ -386,7 +385,7 @@ a, b = 42  # Can't unpack non-iterable
 """
     tree = parser.parse(code)
     with pytest.raises(
-        UnsupportedUnpackingError, match="Cannot unpack non-iterable"
+        TypeError, match="cannot unpack non-iterable int object"
     ):
         interpreter.execute(tree)
 
@@ -395,9 +394,7 @@ a, b = 42  # Can't unpack non-iterable
 a, b = [1, 2, 3]  # Too many values
 """
     tree = parser.parse(code)
-    with pytest.raises(
-        UnsupportedUnpackingError, match="Too many values to unpack"
-    ):
+    with pytest.raises(ValueError, match="too many values to unpack"):
         interpreter.execute(tree)
 
     # Test not enough values to unpack
@@ -405,9 +402,7 @@ a, b = [1, 2, 3]  # Too many values
 a, b, c = [1, 2]  # Not enough values
 """
     tree = parser.parse(code)
-    with pytest.raises(
-        UnsupportedUnpackingError, match="Not enough values to unpack"
-    ):
+    with pytest.raises(ValueError, match="not enough values to unpack"):
         interpreter.execute(tree)
 
     # Test invalid starred unpacking
@@ -416,8 +411,8 @@ a, *b, *c = [1, 2, 3]  # Multiple starred targets
 """
     tree = parser.parse(code)
     with pytest.raises(
-        UnsupportedUnpackingError,
-        match="Cannot use multiple starred expressions",
+        SyntaxError,
+        match="multiple starred expressions in assignment",
     ):
         interpreter.execute(tree)
 

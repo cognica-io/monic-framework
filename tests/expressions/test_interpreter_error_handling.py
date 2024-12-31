@@ -10,7 +10,6 @@ from monic.expressions import (
     ExpressionsParser,
     ExpressionsInterpreter,
     SecurityError,
-    UnsupportedUnpackingError,
 )
 
 
@@ -45,28 +44,28 @@ def test_unpacking_errors():
 
     # Test unpacking non-iterable
     with pytest.raises(
-        UnsupportedUnpackingError, match="Cannot unpack non-iterable value"
+        TypeError, match="cannot unpack non-iterable int object"
     ):
         interpreter.execute(parser.parse("a, b = 42"))
 
     # Test too many values to unpack
     with pytest.raises(
-        UnsupportedUnpackingError,
-        match="Not enough values to unpack",
+        ValueError,
+        match="not enough values to unpack",
     ):
         interpreter.execute(parser.parse("a, b, c = [1, 2]"))
 
     # Test too few values to unpack
     with pytest.raises(
-        UnsupportedUnpackingError,
-        match="Too many values to unpack",
+        ValueError,
+        match="too many values to unpack",
     ):
         interpreter.execute(parser.parse("a, b = [1, 2, 3]"))
 
     # Test multiple starred expressions
     with pytest.raises(
-        UnsupportedUnpackingError,
-        match="Cannot use multiple starred expressions in assignment",
+        SyntaxError,
+        match="multiple starred expressions in assignment",
     ):
         interpreter.execute(parser.parse("*a, *b = [1, 2, 3]"))
 

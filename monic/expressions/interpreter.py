@@ -20,10 +20,7 @@ import typing as t
 from dataclasses import dataclass, field
 
 from monic.expressions.context import ExpressionsContext
-from monic.expressions.exceptions import (
-    SecurityError,
-    UnsupportedUnpackingError,
-)
+from monic.expressions.exceptions import SecurityError
 from monic.expressions.registry import registry
 
 
@@ -178,7 +175,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "TimeoutError": TimeoutError,
             "RuntimeError": RuntimeError,
             "SecurityError": SecurityError,
-            "UnsupportedUnpackingError": UnsupportedUnpackingError,
         }
 
         # Add registered objects to global environment
@@ -622,8 +618,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             value: The value being assigned
 
         Raises:
-            UnsupportedUnpackingError: If an unsupported unpacking pattern is
-            encountered
+            TypeError: If an unsupported unpacking pattern is encountered
         """
         if isinstance(target, ast.Name):
             self._handle_name_target(target, value)
@@ -634,9 +629,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         elif isinstance(target, (ast.Tuple, ast.List)):
             self._handle_sequence_unpacking(target, value)
         else:
-            raise UnsupportedUnpackingError(
-                f"Unsupported unpacking target type: {type(target).__name__}"
-            )
+            raise TypeError(f"cannot unpack {type(target).__name__}")
 
     def _handle_sequence_unpacking(
         self,
@@ -650,13 +643,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             value: Value to unpack
 
         Raises:
-            ValueError: If value cannot be unpacked
-            UnsupportedUnpackingError: If unpacking pattern is not supported
+            TypeError: If value cannot be unpacked
+            ValueError: If there are too many or too few values to unpack
+            SyntaxError: If multiple starred expressions are used
         """
         with ScopeContext(self):
             try:
                 if not hasattr(value, "__iter__"):
-                    raise ValueError("Cannot unpack non-iterable value")
+                    raise TypeError(
+                        f"cannot unpack non-iterable {type(value).__name__} "
+                        "object"
+                    )
 
                 # Check for starred expressions (extended unpacking)
                 starred_indices = [
@@ -666,8 +663,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 ]
 
                 if len(starred_indices) > 1:
-                    raise UnsupportedUnpackingError(
-                        "Cannot use multiple starred expressions in assignment"
+                    raise SyntaxError(
+                        "multiple starred expressions in assignment"
                     )
 
                 if starred_indices:
@@ -683,15 +680,21 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     # Standard unpacking without starred expression
                     value_list = list(value)
                     if len(value_list) < len(target.elts):
-                        raise ValueError("Not enough values to unpack")
+                        raise ValueError(
+                            "not enough values to unpack (expected "
+                            f"{len(target.elts)}, got {len(value_list)})"
+                        )
                     elif len(value_list) > len(target.elts):
-                        raise ValueError("Too many values to unpack")
+                        raise ValueError(
+                            "too many values to unpack (expected "
+                            f"{len(target.elts)})"
+                        )
 
                     # Unpack each element
                     for tgt, val in zip(target.elts, value):
                         self._handle_unpacking_target(tgt, val)
-            except (TypeError, ValueError) as e:
-                raise UnsupportedUnpackingError(str(e)) from e
+            except (TypeError, ValueError, SyntaxError) as e:
+                raise type(e)(str(e)) from e
 
     def _handle_starred_unpacking(
         self,
@@ -710,7 +713,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         Raises:
             ValueError: If there are not enough values to unpack
-            UnsupportedUnpackingError: If unpacking pattern is not supported
+            TypeError: If target is not a valid unpacking target
         """
         with ScopeContext(self):
             iter_value = iter(value)
@@ -721,7 +724,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 try:
                     self._handle_unpacking_target(tgt, next(iter_value))
                 except StopIteration as e:
-                    raise ValueError("Not enough values to unpack") from e
+                    raise ValueError("not enough values to unpack") from e
 
             # Collect remaining elements for the starred target
             starred_values = list(iter_value)
@@ -733,7 +736,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             if after_star_count > 0:
                 # Make sure there are enough elements
                 if len(starred_values) < after_star_count:
-                    raise ValueError("Not enough values to unpack")
+                    raise ValueError("not enough values to unpack")
 
                 # Separate starred values
                 starred_list = starred_values[:-after_star_count]
@@ -742,6 +745,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 # Assign starred target
                 if isinstance(starred_target.value, ast.Name):
                     self._set_name_value(starred_target.value.id, starred_list)
+                else:
+                    raise TypeError("starred assignment target must be a name")
 
                 # Assign elements after starred
                 after_elements = target_elts[star_index + 1 :]
@@ -754,6 +759,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     self._set_name_value(
                         starred_target.value.id, starred_values
                     )
+                else:
+                    raise TypeError("starred assignment target must be a name")
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> t.Any:
         """Handle named expressions (walrus operator).
@@ -1725,7 +1732,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             self._handle_unpacking_target(
                                 generator.target, item
                             )
-                        except UnsupportedUnpackingError:
+                        except (TypeError, ValueError, SyntaxError):
                             if isinstance(generator.target, ast.Name):
                                 self._set_name_value(generator.target.id, item)
                             else:
@@ -1803,14 +1810,16 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             bool: Whether all conditions are met
 
         Raises:
-            UnsupportedUnpackingError: If target unpacking fails
+            TypeError: If value is not iterable
+            ValueError: If target unpacking fails
+            SyntaxError: If multiple starred expressions are used
         """
         # Restore environment from before this generator's loop
         self.local_env = current_env.copy()
 
         try:
             self._handle_unpacking_target(generator.target, item)
-        except UnsupportedUnpackingError:
+        except (TypeError, ValueError, SyntaxError):
             if isinstance(generator.target, ast.Name):
                 self._set_name_value(generator.target.id, item)
             else:

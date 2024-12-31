@@ -5,10 +5,7 @@
 #
 
 from monic.expressions.context import ExpressionsContext
-from monic.expressions.exceptions import (
-    SecurityError,
-    UnsupportedUnpackingError,
-)
+from monic.expressions.exceptions import SecurityError
 from monic.expressions.interpreter import ExpressionsInterpreter
 from monic.expressions.parser import ExpressionsParser
 from monic.expressions.registry import (
@@ -26,7 +23,6 @@ __all__ = [
     "ExpressionsParser",
     # Exceptions
     "SecurityError",
-    "UnsupportedUnpackingError",
     # Registry
     "monic_bind",
     "monic_bind_module",
