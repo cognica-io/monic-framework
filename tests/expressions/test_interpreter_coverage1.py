@@ -613,7 +613,7 @@ def test_global_name_error():
     interpreter = ExpressionsInterpreter()
     code = """
 global x
-print(x)
+x
 """
     # 'x' is declared global but never defined in global_env => NameError
     tree = parser.parse(code)
