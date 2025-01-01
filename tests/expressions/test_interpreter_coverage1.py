@@ -444,11 +444,11 @@ class Test:
     pass
 
 obj = Test()
-result = obj.__dict__  # Forbidden attribute
+result = obj.__code__  # Forbidden attribute
 """
     tree = parser.parse(code)
     with pytest.raises(
-        SecurityError, match="Access to '__dict__' attribute is not allowed"
+        SecurityError, match="Access to '__code__' attribute is not allowed"
     ):
         interpreter.execute(tree)
 

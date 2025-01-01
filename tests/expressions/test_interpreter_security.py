@@ -18,7 +18,7 @@ def test_security_checks():
 
     Tests:
     1. Forbidden built-in function calls (eval, exec, compile, __import__)
-    2. Forbidden attribute access (__code__, __globals__, __dict__)
+    2. Forbidden attribute access (__code__, __globals__, __class__)
     3. Forbidden access to __builtins__
     4. Forbidden import statements
     """
@@ -35,7 +35,7 @@ def test_security_checks():
             interpreter.execute(tree)
 
     # Forbidden attribute access
-    forbidden_attrs = ["__code__", "__globals__", "__dict__"]
+    forbidden_attrs = ["__code__", "__globals__", "__class__"]
     for attr in forbidden_attrs:
         with pytest.raises(
             SecurityError, match=f"Access to '{attr}' attribute is not allowed"

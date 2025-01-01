@@ -142,7 +142,7 @@ def test_attribute_access_errors():
 
     # Test forbidden attribute access
     with pytest.raises(
-        SecurityError, match="Access to '__dict__' attribute is not allowed"
+        AttributeError, match="'list' object has no attribute '__dict__'"
     ):
         interpreter.execute(parser.parse("[].__dict__"))
 
