@@ -304,6 +304,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         Set the value of a name, considering 'global' and 'nonlocal'
         declarations.
         """
+        # Special case for '_'
+        if name == "_":
+            self.global_env["_"] = value
+            return
+
         # If declared global in the current scope:
         if name in self.current_scope.globals:
             self.global_env[name] = value
