@@ -172,3 +172,288 @@ def test_import_errors():
         SecurityError, match="Import statements are not allowed"
     ):
         interpreter.execute(parser.parse("from os import path"))
+
+
+def test_function_call_edge_cases():
+    """Test edge cases in function calls.
+
+    Tests:
+    1. Calling non-callable objects
+    2. Missing required arguments
+    3. Invalid keyword arguments
+    4. Invalid **kwargs
+    5. Invalid argument types
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test calling non-callable object
+    with pytest.raises(TypeError, match="'int' object is not callable"):
+        interpreter.execute(parser.parse("x = 42; x()"))
+
+    # Test missing required argument
+    with pytest.raises(
+        TypeError, match="missing required positional argument: 'x'"
+    ):
+        interpreter.execute(
+            parser.parse(
+                """
+def f(x):
+    return x
+f()
+"""
+            )
+        )
+
+    # Test unexpected keyword argument
+    with pytest.raises(
+        TypeError, match="got an unexpected keyword argument: 'x'"
+    ):
+        interpreter.execute(
+            parser.parse(
+                """
+def f():
+    pass
+f(x=1)
+"""
+            )
+        )
+
+    # Test **kwargs with non-dict
+    with pytest.raises(TypeError, match="Argument after \\*\\* must be a dict"):
+        interpreter.execute(
+            parser.parse(
+                """
+def f():
+    pass
+f(**[1,2,3])
+"""
+            )
+        )
+
+    # Test invalid argument types
+    with pytest.raises(TypeError):
+        interpreter.execute(
+            parser.parse(
+                """
+def f(x: int):
+    return x + 1
+f("not an int")
+"""
+            )
+        )
+
+
+def test_attribute_error_handling():
+    """Test attribute error handling.
+
+    Tests:
+    1. Access to non-existent attributes
+    2. Access to attributes of None
+    3. Setting attributes on immutable objects
+    4. Deleting attributes
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test non-existent attribute access
+    with pytest.raises(AttributeError):
+        interpreter.execute(
+            parser.parse(
+                """
+class Test:
+    pass
+t = Test()
+t.non_existent
+"""
+            )
+        )
+
+    # Test attribute access on None
+    with pytest.raises(AttributeError):
+        interpreter.execute(
+            parser.parse(
+                """
+x = None
+x.anything
+"""
+            )
+        )
+
+    # Test setting attribute on immutable object
+    with pytest.raises(AttributeError):
+        interpreter.execute(
+            parser.parse(
+                """
+x = 42
+x.new_attr = 1
+"""
+            )
+        )
+
+    # Test deleting non-existent attribute
+    with pytest.raises(AttributeError):
+        interpreter.execute(
+            parser.parse(
+                """
+class Test:
+    pass
+t = Test()
+del t.non_existent
+"""
+            )
+        )
+
+
+def test_subscript_error_handling():
+    """Test subscript error handling.
+
+    Tests:
+    1. Index out of range
+    2. Invalid index types
+    3. Invalid slice parameters
+    4. Modifying immutable sequences
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test index out of range
+    with pytest.raises(IndexError):
+        interpreter.execute(
+            parser.parse(
+                """
+lst = [1, 2, 3]
+lst[10]
+"""
+            )
+        )
+
+    # Test invalid index type
+    with pytest.raises(TypeError):
+        interpreter.execute(
+            parser.parse(
+                """
+lst = [1, 2, 3]
+lst["not an index"]
+"""
+            )
+        )
+
+    # Test invalid slice parameters
+    with pytest.raises(TypeError):
+        interpreter.execute(
+            parser.parse(
+                """
+lst = [1, 2, 3]
+lst[1:"2"]
+"""
+            )
+        )
+
+    # Test modifying immutable sequence
+    with pytest.raises(TypeError):
+        interpreter.execute(
+            parser.parse(
+                """
+t = (1, 2, 3)
+t[0] = 42
+"""
+            )
+        )
+
+
+def test_scope_error_handling():
+    """Test scope-related error handling.
+
+    Tests:
+    1. Undefined variables
+    2. Invalid nonlocal declarations
+    3. Name conflicts
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test undefined variable
+    with pytest.raises(NameError):
+        interpreter.execute(
+            parser.parse(
+                """
+x = undefined_variable
+"""
+            )
+        )
+
+    # Test invalid nonlocal declaration
+    with pytest.raises(SyntaxError):
+        interpreter.execute(
+            parser.parse(
+                """
+def f():
+    def g():
+        nonlocal x  # x is not in any enclosing scope
+        x = 1
+    g()
+f()
+"""
+            )
+        )
+
+    # Test name conflicts
+    with pytest.raises(SyntaxError):
+        interpreter.execute(
+            parser.parse(
+                """
+def f():
+    x = 1
+    def g():
+        global x
+        nonlocal x  # can't be both global and nonlocal
+        x = 2
+    g()
+f()
+"""
+            )
+        )
+
+
+def test_operator_error_handling():
+    """Test operator error handling.
+
+    Tests:
+    1. Invalid operand types
+    2. Division by zero
+    3. Invalid comparison
+    4. Invalid boolean operations
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test invalid operand types
+    with pytest.raises(TypeError):
+        interpreter.execute(
+            parser.parse(
+                """
+"string" + 42
+"""
+            )
+        )
+
+    # Test division by zero
+    with pytest.raises(ZeroDivisionError):
+        interpreter.execute(
+            parser.parse(
+                """
+1 / 0
+"""
+            )
+        )
+
+    # Test invalid comparison
+    with pytest.raises(TypeError):
+        interpreter.execute(
+            parser.parse(
+                """
+[1, 2] < "string"
+"""
+            )
+        )
