@@ -9,5 +9,5 @@ from monic.expressions.registry import monic_bind_default_module
 
 try:
     monic_bind_default_module("polars", "pl")
-except ImportError:
-    pass
+except ImportError:  # pragma: no cover
+    pass  # pragma: no cover
