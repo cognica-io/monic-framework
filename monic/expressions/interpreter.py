@@ -2287,7 +2287,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             node: The ClassDef AST node
         """
         # Create a new scope for the class definition
-        with ScopeContext(self):
+        with ScopeContext(self, save_env=True) as (_, saved_env):
             # Evaluate base classes
             bases = tuple(self.visit(base) for base in node.bases)
 
@@ -2311,6 +2311,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
             # Register the class in the current scope
             self._set_name_value(node.name, class_obj)
+
+            # Also register the class in the global environment
+            self.global_env[node.name] = class_obj
+
+            # Also register the class in the outer scope if we're in a method
+            # or if we have a saved environment
+            if saved_env is not None:
+                saved_env[node.name] = class_obj
+                # Also add to outer scope's locals
+                if len(self.scope_stack) > 1:
+                    self.scope_stack[-2].locals.add(node.name)
 
     def _match_value_pattern(
         self,

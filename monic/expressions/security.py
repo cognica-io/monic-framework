@@ -36,7 +36,6 @@ class SecurityChecker(ast.NodeVisitor):
     FORBIDDEN_ATTRS = {
         "__code__",
         "__globals__",
-        "__dict__",
         "__class__",
         "__bases__",
         "__subclasses__",
