@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from monic.expressions.context import ExpressionsContext
 from monic.expressions.exceptions import SecurityError
 from monic.expressions.registry import registry
+from monic.expressions.security import SecurityChecker
+from monic.expressions.semantic import SemanticAnalyzer
 
 
 class ReturnValue(Exception):
@@ -152,6 +154,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "all": all,
             "isinstance": isinstance,
             "issubclass": issubclass,
+            "getattr": getattr,
+            "hasattr": hasattr,
             # Built-in types
             "bool": bool,
             "int": int,
@@ -196,33 +200,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Initialize last result storage
         self.global_env["_"] = None
 
-        # List of forbidden functions and modules
-        self.FORBIDDEN_NAMES = {
-            # Built-in functions
-            "eval",
-            "exec",
-            "compile",
-            "execfile",
-            "open",
-            "globals",
-            "locals",
-            "vars",
-            "__import__",
-            # Module functions
-            "time.sleep",
-        }
-        # List of forbidden attribute accesses
-        self.FORBIDDEN_ATTRS = {
-            "__code__",
-            "__globals__",
-            "__dict__",
-            "__class__",
-            "__bases__",
-            "__subclasses__",
-            "__mro__",
-            "__qualname__",
-        }
-
     @property
     def current_scope(self) -> Scope:
         return self.scope_stack[-1]
@@ -230,7 +207,12 @@ class ExpressionsInterpreter(ast.NodeVisitor):
     def execute(self, tree: ast.AST) -> t.Any:
         """Execute an AST."""
         # Perform security check
-        self._check_security(tree)
+        checker = SecurityChecker()
+        checker.check(tree)
+
+        # Perform semantic analysis
+        analyzer = SemanticAnalyzer()
+        analyzer.analyze(tree)
 
         # Reset the timer for timeout tracking
         self.started_at = time.monotonic()
@@ -291,93 +273,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         self.visit(item)
             elif isinstance(value, ast.AST):
                 self.visit(value)
-
-    def _check_security(self, node: ast.AST) -> None:
-        """Check for potentially dangerous operations in the AST.
-
-        Args:
-            node: AST node to check
-
-        Raises:
-            SecurityError: If dangerous operations are detected
-        """
-        for op in ast.walk(node):
-            # Check for forbidden function calls
-            if isinstance(op, ast.Name) and op.id in self.FORBIDDEN_NAMES:
-                raise SecurityError(f"Call to builtin '{op.id}' is not allowed")
-
-            # Check for forbidden attribute access
-            if isinstance(op, ast.Attribute):
-                # Check for direct forbidden attribute access
-                if op.attr in self.FORBIDDEN_ATTRS:
-                    raise SecurityError(
-                        f"Access to '{op.attr}' attribute is not allowed"
-                    )
-
-                # Check for forbidden function calls like time.sleep
-                if isinstance(op.value, ast.Name):
-                    full_name = f"{op.value.id}.{op.attr}"
-                    if full_name in self.FORBIDDEN_NAMES:
-                        raise SecurityError(
-                            f"Call to '{full_name}' is not allowed"
-                        )
-
-            # Check for __builtins__ access
-            if isinstance(op, ast.Name) and op.id == "__builtins__":
-                raise SecurityError(
-                    "Access to '__builtins__' attribute is not allowed"
-                )
-
-            # Check for import statements
-            if isinstance(op, (ast.Import, ast.ImportFrom)):
-                raise SecurityError("Import statements are not allowed")
-
-    def visit_Global(self, node: ast.Global) -> None:
-        """Handle global declarations."""
-        for name in node.names:
-            self.current_scope.globals.add(name)
-            # Remove from locals if present
-            self.current_scope.locals.discard(name)
-
-    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
-        """
-        Handle 'nonlocal' statements, e.g.:
-            nonlocal x, y
-
-        In Python, if a variable is declared 'nonlocal', it must exist in
-        at least one enclosing (function) scope. If not found, raise
-        SyntaxError as in the standard Python behavior.
-        """
-        if len(self.scope_stack) < 2:
-            raise SyntaxError(
-                "nonlocal declaration not allowed at module level"
-            )
-
-        for name in node.names:
-            # Mark this name as nonlocal in the current scope
-            self.current_scope.nonlocals.add(name)
-
-            found = False
-            # Check all outer scopes (excluding the current scope)
-            for scope in reversed(self.scope_stack[:-1]):
-                # If already local or already marked nonlocal there, consider
-                # it found
-                if (
-                    name in scope.locals
-                    or name in scope.nonlocals
-                    or name in self.local_env
-                ):
-                    found = True
-                    break
-
-            if not found:
-                # If it's not in any enclosing scope, Python raises SyntaxError
-                raise SyntaxError(
-                    f"No binding for nonlocal '{name}' found in outer scopes"
-                )
-
-    def visit_Constant(self, node: ast.Constant) -> t.Any:
-        return node.value
 
     def _get_name_value(self, name: str) -> t.Any:
         """Get value of a name considering scope declarations."""
@@ -1941,68 +1836,42 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         return "".join(parts)
 
     def _format_value(self, node: ast.FormattedValue) -> str:
-        """Format a single value in an f-string.
+        """Format a value according to format spec.
 
         Args:
-            node: FormattedValue AST node
+            node: The FormattedValue AST node
 
         Returns:
-            Formatted string representation of the value
+            The formatted string
 
         Raises:
-            NotImplementedError: If unsupported conversion or format_spec is
-            used
+            ValueError: If format specification is invalid
         """
-        # Evaluate the expression
         value = self.visit(node.value)
-
-        # Handle conversion specifier (s, r, a)
-        if node.conversion == -1:  # No conversion
-            converted = value
-        elif node.conversion == 115:  # 's' for str()
-            converted = str(value)
-        elif node.conversion == 114:  # 'r' for repr()
-            converted = repr(value)
-        elif node.conversion == 97:  # 'a' for ascii()
-            converted = ascii(value)
-        else:
-            raise NotImplementedError(
-                f"Unsupported conversion type in f-string: {node.conversion}"
-            )
-
-        # Handle format specification
-        if node.format_spec is None:
-            format_spec = ""
-        else:
-            # Format spec can itself be an f-string
-            format_spec = self.visit(node.format_spec)
+        format_spec = self.visit(node.format_spec) if node.format_spec else ""
 
         try:
-            # Apply the format specification
-            if format_spec:
-                result = format(converted, format_spec)
+            if node.conversion == -1:  # No conversion
+                converted = value
+            elif node.conversion == 115:  # str
+                converted = str(value)
+            elif node.conversion == 114:  # repr
+                converted = repr(value)
+            elif node.conversion == 97:  # ascii
+                converted = ascii(value)
             else:
-                result = format(converted)
+                raise ValueError(f"Unknown conversion code {node.conversion}")
+
+            if not format_spec:
+                result = str(converted)
+            else:
+                result = format(converted, format_spec)
             return result
         except ValueError as e:
             raise ValueError(
                 f"Invalid format specification '{format_spec}' "
                 f"for value {repr(value)} of type {type(value).__name__}"
             ) from e
-
-    def _check_attribute_security(self, attr_name: str) -> None:
-        """Check if attribute access is allowed.
-
-        Args:
-            attr_name: Name of the attribute to check
-
-        Raises:
-            SecurityError: If attribute access is not allowed
-        """
-        if attr_name in self.FORBIDDEN_ATTRS:
-            raise SecurityError(
-                f"Access to '{attr_name}' attribute is not allowed"
-            )
 
     def _get_attribute_safely(self, value: t.Any, attr_name: str) -> t.Any:
         """Get attribute value with proper error handling.
@@ -2164,14 +2033,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             The value of the attribute
 
         Raises:
-            SecurityError: If accessing a forbidden attribute
             AttributeError: If the attribute doesn't exist
+            SecurityError: If attribute access is not allowed
         """
-        # Security check
-        self._check_attribute_security(node.attr)
-
         # Get the base value
         value = self.visit(node.value)
+
+        # Check if this is a forbidden attribute
+        if node.attr in SecurityChecker.FORBIDDEN_ATTRS:
+            raise SecurityError(
+                f"Access to '{node.attr}' attribute is not allowed"
+            )
 
         # Get the attribute safely
         attr = self._get_attribute_safely(value, node.attr)
@@ -2782,3 +2654,65 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
                     # Return the match statement since we found a match
                     return
+
+    def visit_Global(self, node: ast.Global) -> None:
+        """Handle global declarations."""
+        for name in node.names:
+            # Check if the name is already declared as nonlocal
+            if name in self.current_scope.nonlocals:
+                raise SyntaxError(f"name '{name}' is nonlocal and global")
+            self.current_scope.globals.add(name)
+            # Remove from locals if present
+            self.current_scope.locals.discard(name)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        """
+        Handle 'nonlocal' statements, e.g.:
+            nonlocal x, y
+
+        In Python, if a variable is declared 'nonlocal', it must exist in
+        at least one enclosing (function) scope. If not found, raise
+        SyntaxError as in the standard Python behavior.
+        """
+        if len(self.scope_stack) < 2:
+            raise SyntaxError(
+                "nonlocal declaration not allowed at module level"
+            )
+
+        for name in node.names:
+            # Check if the name is already declared as global
+            if name in self.current_scope.globals:
+                raise SyntaxError(f"name '{name}' is nonlocal and global")
+
+            # Mark this name as nonlocal in the current scope
+            self.current_scope.nonlocals.add(name)
+
+            found = False
+            # Check all outer scopes (excluding the current scope)
+            for scope in reversed(self.scope_stack[:-1]):
+                # If already local or already marked nonlocal there, consider
+                # it found
+                if (
+                    name in scope.locals
+                    or name in scope.nonlocals
+                    or name in self.local_env
+                ):
+                    found = True
+                    break
+
+            if not found:
+                # If it's not in any enclosing scope, Python raises SyntaxError
+                raise SyntaxError(
+                    f"No binding for nonlocal '{name}' found in outer scopes"
+                )
+
+    def visit_Constant(self, node: ast.Constant) -> t.Any:
+        """Visit a constant value node.
+
+        Args:
+            node: The Constant AST node
+
+        Returns:
+            The constant value
+        """
+        return node.value
