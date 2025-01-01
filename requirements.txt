@@ -1,2 +1,5 @@
 fastapi[standard]
 sqlmodel
+numpy
+pandas
+polars

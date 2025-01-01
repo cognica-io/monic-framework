@@ -3,7 +3,13 @@ name = "monic-framework"
 version = "0.1.1"
 description = "Monic Framework"
 requires-python = ">=3.10"
-dependencies = ["fastapi[standard]>=0.115.6", "sqlmodel>=0.0.22"]
+dependencies = [
+    "fastapi[standard]>=0.115.6",
+    "sqlmodel>=0.0.22",
+    "numpy",
+    "pandas",
+    "polars",
+]
 authors = [{ name = "Cognica, Inc.", email = "support@cognica.io" }]
 readme = "README.md"
 license = { file = "LICENSE" }
