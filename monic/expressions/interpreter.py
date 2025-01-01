@@ -180,6 +180,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "StopIteration": StopIteration,
             "TimeoutError": TimeoutError,
             "RuntimeError": RuntimeError,
+            "SyntaxError": SyntaxError,
+            "IndentationError": IndentationError,
+            "AttributeError": AttributeError,
             "SecurityError": SecurityError,
         }
 
@@ -802,7 +805,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 handled = False
                 for handler in node.handlers:
                     if handler.type is None:
-                        exc_class = Exception
+                        exc_class: t.Type[BaseException] = Exception
                     else:
                         exc_class = self._get_exception_class(handler.type)
 
@@ -827,51 +830,79 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     for stmt in node.finalbody:
                         self.visit(stmt)
 
-    def _get_exception_class(self, node: ast.expr) -> t.Type[Exception]:
-        if isinstance(node, ast.Name):
-            class_name = node.id
-            if class_name in globals()["__builtins__"]:
-                exc_class = globals()["__builtins__"][class_name]
-                if isinstance(exc_class, type) and issubclass(
-                    exc_class, Exception
-                ):
-                    return exc_class
-            raise NameError(
-                f"Name '{class_name}' is not defined or is not an exception "
-                "class"
-            )
-        elif isinstance(node, ast.Attribute):
-            value = self.visit(node.value)
-            attr = node.attr
-            if hasattr(value, attr):
-                exc_class = getattr(value, attr)
-                if isinstance(exc_class, type) and issubclass(
-                    exc_class, Exception
-                ):
-                    return exc_class
-            raise NameError(f"'{attr}' is not a valid exception class")
-        else:
-            raise TypeError(
-                f"Invalid exception class specification: {ast.dump(node)}"
-            )
+    def _get_exception_class(self, node: ast.expr) -> t.Type[BaseException]:
+        """Resolve the AST node to an actual exception class object."""
+        # Use self.visit to evaluate the expression node (which might be a Name
+        # like 'ValueError' or user-defined classes like 'ValidationError', or
+        # even dotted attributes). This way, if the user code declared:
+        #
+        #    class ValidationError(InputError): pass
+        #
+        # then we have that class in self.local_env, and self.visit(node)
+        # will retrieve it.
+        value = self.visit(node)
+
+        # Make sure it's a subclass of BaseException (i.e. an Exception).
+        if isinstance(value, type) and issubclass(value, BaseException):
+            return value
+
+        # Otherwise, it's not a valid exception class.
+        # If "value" is, for instance, a string or a function, we raise.
+        # (If "value" doesn't have a __name__, make a fallback name.)
+        value_name = getattr(value, "__name__", repr(value))
+        raise NameError(
+            f"Name '{value_name}' is not defined or is not an exception class"
+        )
 
     def visit_Raise(self, node: ast.Raise) -> None:
+        """
+        Handle raise statements that preserve exception chaining.
+
+        - If node.exc is a call (e.g. TypeError("msg")), we create an instance.
+        - If node.exc is already an exception instance, we just raise it as-is.
+        - If node.cause is specified, we set that as the __cause__.
+        """
         if node.exc is None:
             raise RuntimeError("No active exception to re-raise")
 
-        exc = self.visit(node.exc)
-        if isinstance(exc, type) and issubclass(exc, Exception):
-            if node.cause:
-                cause = self.visit(node.cause)
-                raise exc from cause
-            raise exc()
-        else:
-            if isinstance(exc, BaseException):
-                raise exc
+        # Evaluate the main 'exc'
+        # Could be a class like ValueError, or an instance like ValueError()
+        exc_obj = self.visit(node.exc)
+
+        # Evaluate the 'from' cause if present
+        cause_obj = self.visit(node.cause) if node.cause else None
+
+        # If exc_obj is already an exception instance
+        if isinstance(exc_obj, BaseException):
+            if cause_obj is not None:
+                if not isinstance(cause_obj, BaseException):
+                    raise TypeError(
+                        "Expected an exception instance for 'from' cause, "
+                        f"got {type(cause_obj).__name__}"
+                    )
+                # Raise existing exception instance with cause
+                raise exc_obj from cause_obj
             else:
-                raise TypeError(
-                    f"Expected an exception instance, got {type(exc).__name__}"
-                )
+                raise exc_obj
+
+        # If exc_obj is a class (like ValueError) rather than an instance
+        if isinstance(exc_obj, type) and issubclass(exc_obj, BaseException):
+            new_exc = exc_obj()  # Instantiate
+            if cause_obj is not None:
+                if not isinstance(cause_obj, BaseException):
+                    raise TypeError(
+                        "Expected an exception instance for 'from' cause, "
+                        f"got {type(cause_obj).__name__}"
+                    )
+                raise new_exc from cause_obj
+            else:
+                raise new_exc
+
+        # Otherwise it's not a valid exception type or instance
+        raise TypeError(
+            "Expected an exception instance or class, got "
+            f"{type(exc_obj).__name__}"
+        )
 
     def visit_With(self, node: ast.With) -> None:
         """
@@ -1595,72 +1626,127 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Call the function
         return self._call_function(func, pos_args, kwargs)
 
-    def visit_GeneratorExp(
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> t.Any:
+        """
+        Handle generator expressions with closure semantics.
+
+        Capture the current local_env when the generator expression is created
+        so that references to local variables (like 'y=2') remain valid even
+        after returning from the enclosing function.
+
+        Example user code that requires closure:
+            def gen():
+                y = 2
+                return (x + y + i for i in range(3))
+
+        Without closure capturing, "y" would appear undefined once 'gen'
+        returns.
+        """
+        # Copy (snapshot) the current local environment for closure
+        closure_env = dict(self.local_env)
+
+        def _generator_expression_runner():
+            """
+            A helper that reinstalls the 'closure_env' as 'self.local_env'
+            whenever we iterate the generator, mimicking how Python closures
+            keep references to their defining scopes.
+            """
+            prev_env = self.local_env
+            self.local_env = closure_env
+            try:
+                # Actually produce the items by calling the comprehension logic
+                yield from self._evaluate_generator_exp(node)
+            finally:
+                self.local_env = prev_env
+
+        return _generator_expression_runner()
+
+    def _evaluate_generator_exp(
         self, node: ast.GeneratorExp
-    ) -> t.Generator[t.Any, None, None]:
-        """Handle generator expressions."""
-        # Create new scope for the generator expression
-        gen_scope = Scope()
-        self.scope_stack.append(gen_scope)
+    ) -> t.Iterator[t.Any]:
+        """
+        Evaluate an already-constructed generator expression node under the
+        current (already snapshotted) self.local_env.
+        """
 
-        # Copy the outer environment
-        outer_env = self.local_env
-        self.local_env = outer_env.copy()
+        def inner():
+            # The logic below closely matches typical generator expression
+            # evaluation: we handle node.generators (the "for" clauses, possibly
+            # with if-filters) and node.elt (the yield expression).
+            generators = node.generators
 
-        try:
+            # We can reuse your existing "process_generator" or whatever method
+            # you have. The snippet below shows a direct approach:
+            def process(gens, index=0):
+                """
+                Recursively handle each comprehension generator in 'gens'.
+                Once we exhaust them, evaluate node.elt and yield it.
+                """
+                if index >= len(gens):
+                    # If no more loops, the expression is node.elt
+                    yield self.visit(node.elt)
+                    return
 
-            def generator() -> t.Generator[t.Any, None, None]:
-                def process_generator(
-                    generators: list, index: int = 0
-                ) -> t.Generator[t.Any, None, None]:
-                    if index >= len(generators):
-                        # Base case: all generators processed, yield element
-                        value = self.visit(node.elt)
-                        yield value
-                        return
+                gen = gens[index]
+                iter_obj = self.visit(gen.iter)
 
-                    generator = generators[index]
-                    iter_obj = self.visit(generator.iter)
+                try:
+                    iterator = iter(iter_obj)
+                except TypeError as e:
+                    # If not iterable
+                    raise TypeError(
+                        f"object is not iterable: {iter_obj}"
+                    ) from e
 
-                    # Save the current environment before processing this
-                    # generator
-                    current_env = self.local_env.copy()
+                for item in iterator:
+                    # Assign the loop target
+                    self._assign_comprehension_target(gen.target, item)
+                    # Check any if-conditions
+                    if gen.ifs:
+                        skip = False
+                        for if_test in gen.ifs:
+                            condition = self.visit(if_test)
+                            if not condition:
+                                skip = True
+                                break
+                        if skip:
+                            continue
 
-                    for item in iter_obj:
-                        # Restore environment from before this generator's loop
-                        self.local_env = current_env.copy()
+                    # Recurse to handle the next generator
+                    yield from process(gens, index + 1)
 
-                        try:
-                            self._handle_unpacking_target(
-                                generator.target, item
-                            )
-                        except (TypeError, ValueError, SyntaxError):
-                            if isinstance(generator.target, ast.Name):
-                                self._set_name_value(generator.target.id, item)
-                            else:
-                                raise
+            yield from process(generators)
 
-                        # Check if conditions
-                        if all(
-                            self.visit(if_clause) for if_clause in generator.ifs
-                        ):
-                            # Process next generator or yield result
-                            yield from process_generator(generators, index + 1)
+        yield from inner()
 
-                        # Update outer environment with any named expression
-                        # bindings
-                        for name, value in self.local_env.items():
-                            if name not in current_env:
-                                outer_env[name] = value
-
-                # Start processing generators recursively
-                yield from process_generator(node.generators)
-
-            return generator()
-        finally:
-            # Restore the outer environment and pop the scope
-            self.local_env = outer_env
-            self.scope_stack.pop()
+    def _assign_comprehension_target(
+        self, target: ast.expr, value: t.Any
+    ) -> None:
+        """
+        Assign 'value' to the target node within a comprehension. This can be
+        something like 'for i in range(5)', or 'for k, v in items'.
+        If it's just a Name node, we store in self.local_env. If it's a tuple
+        or list, we destructure.
+        """
+        if isinstance(target, ast.Name):
+            # This is a simple Name like: for i in ...
+            self._set_name_value(target.id, value)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            # Destructure the value into the sub-targets
+            if not isinstance(value, (tuple, list)):
+                raise TypeError(f"cannot unpack non-iterable value {value}")
+            if len(value) != len(target.elts):
+                raise ValueError(
+                    f"cannot unpack {len(value)} values into "
+                    f"{len(target.elts)} targets"
+                )
+            for t_elt, v_elt in zip(target.elts, value):
+                self._assign_comprehension_target(t_elt, v_elt)
+        else:
+            # For something more complex, handle similarly or raise an error
+            raise NotImplementedError(
+                f"unsupported comprehension target type: {type(target)}"
+            )
 
     def visit_List(self, node: ast.List) -> list:
         return [self.visit(elt) for elt in node.elts]
