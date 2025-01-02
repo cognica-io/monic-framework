@@ -32,6 +32,19 @@ class ReturnValue(Exception):
     def __init__(self, value):
         self.value = value
 
+class YieldValue(Exception):
+    """Raised to yield a value from a generator."""
+
+    def __init__(self, value):
+        self.value = value
+
+
+class YieldFromValue(Exception):
+    """Raised to yield an iterator from a generator."""
+
+    def __init__(self, iterator):
+        self.iterator = iterator
+
 
 @dataclass
 class Scope:
@@ -156,6 +169,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "issubclass": issubclass,
             "getattr": getattr,
             "hasattr": hasattr,
+            "iter": iter,
+            "next": next,
             # Built-in types
             "bool": bool,
             "int": int,
@@ -1390,6 +1405,106 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         return func
 
+    def _create_generator_closure(
+        self,
+        func_def: ast.FunctionDef,
+        outer_env: dict[str, t.Any],
+        closure_env: dict[str, t.Any],
+        defaults: list[t.Any],
+        kw_defaults: list[t.Any | None],
+        required_count: int,
+    ) -> t.Callable[..., t.Any]:
+        """Create a closure for the generator function definition."""
+
+        def func(*call_args, **call_kwargs):
+            # Create a new execution scope
+            func_scope = Scope()
+            self.scope_stack.append(func_scope)
+
+            prev_env = self.local_env
+            # Build local env from outer + closure
+            self.local_env = {**outer_env, **closure_env}
+
+            self.control.function_depth += 1
+
+            try:
+                # Register the function name itself for recursion
+                self.local_env[func_def.name] = func
+
+                # Create a generator iterator
+                self.local_env["__iter__"] = iter
+
+                # Process nonlocal declarations at function execution time
+                for stmt in func_def.body:
+                    if isinstance(stmt, ast.Nonlocal):
+                        for name in stmt.names:
+                            found = False
+                            # Check all outer scopes
+                            # (excluding the current scope)
+                            for scope in reversed(self.scope_stack[:-1]):
+                                if (
+                                    name in scope.locals
+                                    or name in scope.nonlocals
+                                    or name in self.local_env
+                                ):
+                                    found = True
+                                    break
+                            if not found:
+                                raise SyntaxError(
+                                    f"No binding for nonlocal '{name}' found "
+                                    "in outer scopes"
+                                )
+                            # Mark this name as nonlocal in the current scope
+                            self.current_scope.nonlocals.add(name)
+
+                # Process function parameters
+                self._process_function_parameters(
+                    func_def.name,
+                    call_args,
+                    call_kwargs,
+                    func_def.args.args,
+                    defaults,
+                    required_count,
+                    func_def.args.kwonlyargs,
+                    kw_defaults,
+                    func_def.args.vararg,
+                    func_def.args.kwarg,
+                )
+
+                # Execute function body
+                try:
+                    for stmt in func_def.body:
+                        try:
+                            self.visit(stmt)
+                        except YieldValue as yv:
+                            yield yv.value
+                        except YieldFromValue as yfv:
+                            yield from yfv.iterator
+                    return None
+                except StopIteration:
+                    return None
+                except ReturnValue as rv:
+                    return rv.value
+            finally:
+                self.control.function_depth -= 1
+
+                # Update nonlocals
+                for name in func_scope.nonlocals:
+                    if name in self.local_env:
+                        closure_env[name] = self.local_env[name]
+                        outer_env[name] = self.local_env[name]
+
+                self.local_env = prev_env
+                self.scope_stack.pop()
+
+        return func
+
+    def _is_generator(self, node: ast.FunctionDef) -> bool:
+        return any(
+            isinstance(stmt, (ast.Yield, ast.YieldFrom))
+            for stmt in ast.walk(node)
+        )
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """
         Handle function definition with support for named parameters, defaults,
@@ -1417,12 +1532,22 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             required_count = len(node.args.args) - len(defaults)
 
             # Create the function closure
-            func = self._create_function_closure(
-                func_def=node,
-                outer_env=outer_env,
-                closure_env=closure_env,
-                defaults=defaults,
-                kw_defaults=kw_defaults,
+            if self._is_generator(node):
+                func = self._create_generator_closure(
+                    func_def=node,
+                    outer_env=outer_env,
+                    closure_env=closure_env,
+                    defaults=defaults,
+                    kw_defaults=kw_defaults,
+                    required_count=required_count,
+                )
+            else:
+                func = self._create_function_closure(
+                    func_def=node,
+                    outer_env=outer_env,
+                    closure_env=closure_env,
+                    defaults=defaults,
+                    kw_defaults=kw_defaults,
                 required_count=required_count,
             )
 
@@ -1533,6 +1658,14 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         value = None if node.value is None else self.visit(node.value)
         raise ReturnValue(value)
+
+    def visit_Yield(self, node: ast.Yield) -> None:
+        value = None if node.value is None else self.visit(node.value)
+        raise YieldValue(value)
+
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
+        iterator = self.visit(node.value)
+        raise YieldFromValue(iterator)
 
     def _evaluate_call_arguments(
         self, args: list[ast.expr], keywords: list[ast.keyword]
@@ -1813,11 +1946,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         try:
             self._handle_unpacking_target(generator.target, item)
-        except (TypeError, ValueError, SyntaxError):
+        except (TypeError, ValueError, SyntaxError) as e:
             if isinstance(generator.target, ast.Name):
                 self._set_name_value(generator.target.id, item)
             else:
-                raise
+                raise e
 
         # Check if all conditions are met
         conditions_met = all(
