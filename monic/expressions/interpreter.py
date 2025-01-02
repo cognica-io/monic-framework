@@ -1997,129 +1997,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     f"'{attr_name}'"
                 ) from e
 
-    def _create_bound_method(
-        self, func: t.Any, instance: t.Any, attr_name: str
-    ) -> t.Callable[..., t.Any]:
-        """Create a bound method for a function.
-
-        Args:
-            func: Function to bind
-            instance: Instance to bind to
-            attr_name: Name of the attribute
-
-        Returns:
-            The bound method
-        """
-
-        def bound_method(*args, **kwargs):
-            prev_env = self.local_env
-
-            try:
-                # Check if this is a static method - either by flag or by type
-                has_static_flag = getattr(
-                    type(instance), f"__static_{attr_name}", False
-                )
-                is_static_method = isinstance(func, staticmethod)
-
-                # Check if the method is a function
-                is_function = isinstance(func, types.FunctionType)
-
-                if has_static_flag or is_static_method:
-                    # For static methods, don't bind to instance
-                    self.local_env = prev_env
-                    if is_static_method:
-                        method = func.__get__(None, type(instance))
-                        return method(*args, **kwargs)
-                    return func(*args, **kwargs)
-                elif isinstance(func, classmethod):
-                    self.local_env = prev_env
-                    method = func.__get__(type(instance), type(instance))
-                    return method(*args, **kwargs)
-                elif is_function:
-                    # If it's a function, call it directly
-                    self.local_env = prev_env
-                    return func(*args, **kwargs)
-                else:
-                    self.local_env = prev_env
-                    method = func.__get__(instance, type(instance))
-                    return method(*args, **kwargs)
-            finally:
-                self.local_env = prev_env
-
-        return bound_method
-
-    def _create_decorated_method(
-        self, func: t.Any, instance: t.Any, decorator_type: type
-    ) -> t.Callable[..., t.Any]:
-        """Create a method for a decorated function.
-
-        Args:
-            func: Function to decorate
-            instance: Instance to bind to
-            decorator_type: Type of the decorator
-
-        Returns:
-            The decorated method
-        """
-        if isinstance(decorator_type, (classmethod, property)):
-
-            def decorated_method(*args, **kwargs):
-                prev_env = self.local_env
-                self.local_env = {**prev_env, "self": instance}
-                try:
-                    return func(*args, **kwargs)
-                finally:
-                    self.local_env = prev_env
-
-            return decorated_method
-        else:
-            # For staticmethod, just return the function as is
-            return func
-
-    def _should_bind_function(
-        self, func: t.Any, instance: t.Any, attr_name: str
-    ) -> bool:
-        """Check if a function should be bound to an instance.
-
-        Args:
-            func: Function to check
-            instance: Instance to potentially bind to
-            attr_name: Name of the attribute
-
-        Returns:
-            Whether the function should be bound
-        """
-        # Check if this is a bound function
-        if registry.is_bound(func):
-            return False
-
-        # Check if this is a static method
-        if isinstance(instance, type):
-            # If accessed on class, check for static marker
-            if getattr(instance, f"__static_{attr_name}", False):
-                return False
-        else:
-            # If accessed on instance, check the class
-            if getattr(type(instance), f"__static_{attr_name}", False):
-                return False
-
-        # If not a static method, check if it's a module function
-        if isinstance(instance, types.ModuleType):
-            # For module functions, don't bind self
-            return False
-
-        # Check if the function is in the global environment
-        for global_value in self.global_env.values():
-            if isinstance(global_value, dict):
-                # Check nested dictionaries
-                for nested_value in global_value.values():
-                    if func is nested_value:
-                        return False
-            elif func is global_value:
-                return False
-
-        return True
-
     def visit_Attribute(self, node: ast.Attribute) -> t.Any:
         """Visit an attribute access node.
 
@@ -2133,27 +2010,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             AttributeError: If the attribute doesn't exist
             SecurityError: If attribute access is not allowed
         """
-        # Get the base value
-        value = self.visit(node.value)
-
         # Check if this is a forbidden attribute
         if node.attr in SecurityChecker.FORBIDDEN_ATTRS:
             raise SecurityError(
                 f"Access to '{node.attr}' attribute is not allowed"
             )
 
+        # Get the base value
+        value = self.visit(node.value)
+
         # Get the attribute safely
         attr = self._get_attribute_safely(value, node.attr)
-
-        # Handle function binding
-        if isinstance(attr, types.FunctionType):
-            if self._should_bind_function(attr, value, node.attr):
-                return self._create_bound_method(attr, value, node.attr)
-            return attr
-        elif isinstance(attr, (classmethod, staticmethod, property)):
-            # For decorated methods, get the underlying function
-            func = attr.__get__(value, type(value))
-            return self._create_decorated_method(func, value, type(attr))
 
         return attr
 
@@ -2319,36 +2186,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         return custom_super
 
-    def _process_class_function(
-        self, stmt: ast.FunctionDef, namespace: dict[str, t.Any]
-    ) -> None:
-        """Process a function definition within a class.
-
-        Args:
-            stmt: FunctionDef AST node
-            namespace: Class namespace dictionary
-        """
-        # Handle function definition
-        self.visit(stmt)
-
-        # Get the function from namespace
-        func = namespace[stmt.name]
-
-        # Handle decorators in reverse order
-        for decorator in reversed(stmt.decorator_list):
-            # Evaluate the decorator
-            decorator_func = self.visit(decorator)
-            # Apply the decorator
-            func = decorator_func(func)
-
-            # For static methods, we need to store both the decorator and the
-            # function
-            if decorator_func is staticmethod:
-                namespace[f"__static_{stmt.name}"] = True
-
-        # Update the function in namespace
-        namespace[stmt.name] = func
-
     def _create_class_namespace(self, node: ast.ClassDef) -> dict[str, t.Any]:
         """Create and populate the class namespace.
 
@@ -2367,10 +2204,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         try:
             # Execute the class body
             for stmt in node.body:
-                if isinstance(stmt, ast.FunctionDef):
-                    self._process_class_function(stmt, namespace)
-                else:
-                    self.visit(stmt)
+                self.visit(stmt)
         finally:
             # Restore the environment
             self.local_env = prev_env
