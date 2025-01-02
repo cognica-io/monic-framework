@@ -2543,12 +2543,14 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         self,
         pattern: ast.MatchMapping,
         value: t.Any,
+        pattern_vars: set[str],
     ) -> bool:
         """Match a mapping pattern.
 
         Args:
             pattern: MatchMapping AST node
             value: Value to match against
+            pattern_vars: Set of pattern variables already bound in this pattern
 
         Returns:
             Whether the pattern matches the value
@@ -2565,11 +2567,16 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Match each key-pattern pair
         for key, pat in zip(pattern.keys, pattern.patterns):
             key_value = self.visit(key)
-            if not self._match_pattern(pat, value[key_value]):
+            if not self._match_pattern(pat, value[key_value], pattern_vars):
                 return False
 
         # Handle rest pattern if present
         if pattern.rest is not None:
+            if pattern.rest in pattern_vars:
+                raise SyntaxError(
+                    f"multiple assignments to name '{pattern.rest}' in pattern"
+                )
+            pattern_vars.add(pattern.rest)
             rest_dict = {
                 k: v
                 for k, v in value.items()
@@ -2580,87 +2587,31 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         return True
 
-    def _match_or_pattern(
-        self,
-        pattern: ast.MatchOr,
-        value: t.Any,
-    ) -> bool:
-        """Match an OR pattern.
-
-        Args:
-            pattern: MatchOr AST node
-            value: Value to match against
-
-        Returns:
-            Whether the pattern matches the value
-        """
-        for p in pattern.patterns:
-            # Create a temporary scope for each OR pattern
-            # to avoid variable binding conflicts
-            temp_scope = Scope()
-            self.scope_stack.append(temp_scope)
-            try:
-                if self._match_pattern(p, value):
-                    return True
-            finally:
-                self.scope_stack.pop()
-        return False
-
-    def _match_class_pattern(
-        self,
-        pattern: ast.MatchClass,
-        value: t.Any,
-    ) -> bool:
-        """Match a class pattern.
-
-        Args:
-            pattern: MatchClass AST node
-            value: Value to match against
-
-        Returns:
-            Whether the pattern matches the value
-        """
-        cls = self.visit(pattern.cls)
-        if not isinstance(value, cls):
-            return False
-
-        # Get positional attributes from __match_args__
-        match_args = getattr(cls, "__match_args__", ())
-        if len(pattern.patterns) > len(match_args):
-            return False
-
-        # Match positional patterns
-        for pat, attr_name in zip(pattern.patterns, match_args):
-            if not self._match_pattern(pat, getattr(value, attr_name)):
-                return False
-
-        # Match keyword patterns
-        for name, pat in zip(pattern.kwd_attrs, pattern.kwd_patterns):
-            if not hasattr(value, name):
-                return False
-            if not self._match_pattern(pat, getattr(value, name)):
-                return False
-
-        return True
-
     def _match_as_pattern(
         self,
         pattern: ast.MatchAs,
         value: t.Any,
+        pattern_vars: set[str],
     ) -> bool:
         """Match an AS pattern.
 
         Args:
             pattern: MatchAs AST node
             value: Value to match against
+            pattern_vars: Set of pattern variables already bound in this pattern
 
         Returns:
             Whether the pattern matches the value
         """
         if pattern.pattern is not None:
-            if not self._match_pattern(pattern.pattern, value):
+            if not self._match_pattern(pattern.pattern, value, pattern_vars):
                 return False
         if pattern.name is not None:
+            if pattern.name in pattern_vars:
+                raise SyntaxError(
+                    f"multiple assignments to name '{pattern.name}' in pattern"
+                )
+            pattern_vars.add(pattern.name)
             self._set_name_value(pattern.name, value)
             self.current_scope.locals.add(pattern.name)
         return True
@@ -2707,82 +2658,18 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         if pattern_vars is None:
             pattern_vars = set()
 
-        # Helper to check and add pattern variables
-        def check_pattern_var(name: str) -> None:
-            if name in pattern_vars:
-                raise SyntaxError(
-                    f"multiple assignments to name '{name}' in pattern"
-                )
-            pattern_vars.add(name)
-
         if isinstance(pattern, ast.MatchValue):
             return self._match_value_pattern(pattern, value)
         elif isinstance(pattern, ast.MatchSingleton):
             return value is pattern.value
         elif isinstance(pattern, ast.MatchSequence):
-            if not isinstance(value, (list, tuple)):
-                return False
-
-            # Find star pattern index if exists
-            star_idx = -1
-            for i, p in enumerate(pattern.patterns):
-                if isinstance(p, ast.MatchStar):
-                    star_idx = i
-                    if p.name:
-                        check_pattern_var(p.name)
-                    break
-
-            if star_idx == -1:
-                return self._match_fixed_sequence(
-                    pattern.patterns, value, pattern_vars
-                )
-            else:
-                return self._match_star_sequence(
-                    pattern.patterns, value, star_idx, pattern_vars
-                )
+            return self._match_sequence_pattern(pattern, value, pattern_vars)
         elif isinstance(pattern, ast.MatchMapping):
-            if not isinstance(value, dict):
-                return False
-
-            # Check if all required keys are present
-            for key in pattern.keys:
-                key_value = self.visit(key)
-                if key_value not in value:
-                    return False
-
-            # Match each key-pattern pair
-            for key, pat in zip(pattern.keys, pattern.patterns):
-                key_value = self.visit(key)
-                if not self._match_pattern(pat, value[key_value], pattern_vars):
-                    return False
-
-            # Handle rest pattern if present
-            if pattern.rest is not None:
-                check_pattern_var(pattern.rest)
-                rest_dict = {
-                    k: v
-                    for k, v in value.items()
-                    if not any(self.visit(key) == k for key in pattern.keys)
-                }
-                self._set_name_value(pattern.rest, rest_dict)
-                self.current_scope.locals.add(pattern.rest)
-
-            return True
+            return self._match_mapping_pattern(pattern, value, pattern_vars)
         elif isinstance(pattern, ast.MatchStar):
-            if pattern.name:
-                check_pattern_var(pattern.name)
-            return True
+            return self._match_star_pattern(pattern, value)
         elif isinstance(pattern, ast.MatchAs):
-            if pattern.pattern is not None:
-                if not self._match_pattern(
-                    pattern.pattern, value, pattern_vars
-                ):
-                    return False
-            if pattern.name is not None:
-                check_pattern_var(pattern.name)
-                self._set_name_value(pattern.name, value)
-                self.current_scope.locals.add(pattern.name)
-            return True
+            return self._match_as_pattern(pattern, value, pattern_vars)
         elif isinstance(pattern, ast.MatchOr):
             # Try each alternative pattern
             matched_vars = None
@@ -2799,34 +2686,50 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     return True
             return False
         elif isinstance(pattern, ast.MatchClass):
-            cls = self.visit(pattern.cls)
-            if not isinstance(value, cls):
-                return False
-
-            # Get positional attributes from __match_args__
-            match_args = getattr(cls, "__match_args__", ())
-            if len(pattern.patterns) > len(match_args):
-                return False
-
-            # Match positional patterns
-            for pat, attr_name in zip(pattern.patterns, match_args):
-                if not self._match_pattern(
-                    pat, getattr(value, attr_name), pattern_vars
-                ):
-                    return False
-
-            # Match keyword patterns
-            for name, pat in zip(pattern.kwd_attrs, pattern.kwd_patterns):
-                if not hasattr(value, name):
-                    return False
-                if not self._match_pattern(
-                    pat, getattr(value, name), pattern_vars
-                ):
-                    return False
-
-            return True
+            return self._match_class_pattern(pattern, value, pattern_vars)
 
         return False
+
+    def _match_class_pattern(
+        self,
+        pattern: ast.MatchClass,
+        value: t.Any,
+        pattern_vars: set[str],
+    ) -> bool:
+        """Match a class pattern.
+
+        Args:
+            pattern: MatchClass AST node
+            value: Value to match against
+            pattern_vars: Set of pattern variables already bound in this pattern
+
+        Returns:
+            Whether the pattern matches the value
+        """
+        cls = self.visit(pattern.cls)
+        if not isinstance(value, cls):
+            return False
+
+        # Get positional attributes from __match_args__
+        match_args = getattr(cls, "__match_args__", ())
+        if len(pattern.patterns) > len(match_args):
+            return False
+
+        # Match positional patterns
+        for pat, attr_name in zip(pattern.patterns, match_args):
+            if not self._match_pattern(
+                pat, getattr(value, attr_name), pattern_vars
+            ):
+                return False
+
+        # Match keyword patterns
+        for name, pat in zip(pattern.kwd_attrs, pattern.kwd_patterns):
+            if not hasattr(value, name):
+                return False
+            if not self._match_pattern(pat, getattr(value, name), pattern_vars):
+                return False
+
+        return True
 
     def visit_Match(self, node: ast.Match) -> None:
         """Handle match-case statements.
