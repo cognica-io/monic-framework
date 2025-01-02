@@ -1453,11 +1453,11 @@ class Line:
 
 def classify_line(line):
     match line:
-        case Line(start=Point(x1=x1, y1=y1), end=Point(x2=x2, y2=y2)) if x1 == x2 and y1 == y2:
+        case Line(start=Point(x=x1, y=y1), end=Point(x=x2, y=y2)) if x1 == x2 and y1 == y2:
             return "point"
-        case Line(start=Point(x1=x1, y1=y1), end=Point(x2=x2, y2=y2)) if x1 == x2:
+        case Line(start=Point(x=x1, y=y1), end=Point(x=x2, y=y2)) if x1 == x2 and y1 != y2:
             return "vertical"
-        case Line(start=Point(x1=x1, y1=y1), end=Point(x2=x2, y2=y2)) if y1 == y2:
+        case Line(start=Point(x=x1, y=y1), end=Point(x=x2, y=y2)) if y1 == y2 and x1 != x2:
             return "horizontal"
         case Line():
             return "diagonal"
@@ -1475,9 +1475,9 @@ result = [classify_line(l) for l in lines]
 """
     interpreter.execute(parser.parse(code))
     assert interpreter.local_env["result"] == [
-        "diagonal",
-        "diagonal",
-        "diagonal",
+        "point",
+        "vertical",
+        "horizontal",
         "diagonal",
         "not a line",
     ]
@@ -1488,9 +1488,9 @@ def analyze_data(data):
     match data:
         case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": x2, "y": y2}] if x == x2 and y == y2:
             return "same point"
-        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": x, "y": _}]:
+        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": x, "y": _}] if x == x2 and y != y2:
             return "same x"
-        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": _, "y": y}]:
+        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": _, "y": y}] if y == y2 and x != x2:
             return "same y"
         case [{"type": "point"}, {"type": "point"}]:
             return "different points"
@@ -1517,9 +1517,9 @@ def analyze_data(data):
     match data:
         case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": x2, "y": y2}] if x == x2 and y == y2:
             return "same point"
-        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": x2, "y": _}]:
+        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": x2, "y": _}] if x == x2 and y != y2:
             return "same x"
-        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": _, "y": y2}]:
+        case [{"type": "point", "x": x, "y": y}, {"type": "point", "x": _, "y": y2}] if y == y2 and x != x2:
             return "same y"
         case [{"type": "point"}, {"type": "point"}]:
             return "different points"
@@ -1539,8 +1539,8 @@ result = [analyze_data(d) for d in test_data]
     assert interpreter.local_env["result"] == [
         "same point",
         "same x",
-        "same x",
-        "same x",
+        "same y",
+        "different points",
         "invalid data",
     ]
 
