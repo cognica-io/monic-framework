@@ -1426,6 +1426,12 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 required_count=required_count,
             )
 
+            # Apply decorators in reverse order
+            for decorator in reversed(node.decorator_list):
+                decorator_func = self.visit(decorator)
+                if decorator_func is not None:
+                    func = decorator_func(func)
+
             # Register the function in the current scope
             self._set_name_value(node.name, func)
         finally:
