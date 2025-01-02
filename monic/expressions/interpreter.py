@@ -32,6 +32,7 @@ class ReturnValue(Exception):
     def __init__(self, value):
         self.value = value
 
+
 class YieldValue(Exception):
     """Raised to yield a value from a generator."""
 
@@ -1548,8 +1549,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     closure_env=closure_env,
                     defaults=defaults,
                     kw_defaults=kw_defaults,
-                required_count=required_count,
-            )
+                    required_count=required_count,
+                )
 
             # Apply decorators in reverse order
             for decorator in reversed(node.decorator_list):
