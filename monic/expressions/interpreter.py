@@ -1481,9 +1481,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             yield yv.value
                         except YieldFromValue as yfv:
                             yield from yfv.iterator
-                    return None
-                except StopIteration:
-                    return None
+                        except StopIteration:
+                            return None
                 except ReturnValue as rv:
                     return rv.value
             finally:
