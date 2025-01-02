@@ -171,6 +171,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "hasattr": hasattr,
             "iter": iter,
             "next": next,
+            "type": type,
             # Built-in types
             "bool": bool,
             "int": int,
