@@ -1439,6 +1439,13 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         except YieldValue as yv:
                             yield yv.value
                         except YieldFromValue as yfv:
+                            try:
+                                iter(yfv.iterator)
+                            except TypeError as e:
+                                raise TypeError(
+                                    "cannot 'yield from' a non-iterator of "
+                                    f"type {type(yfv.iterator).__name__}"
+                                ) from e
                             yield from yfv.iterator
                         except StopIteration:
                             return None
