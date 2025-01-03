@@ -1010,11 +1010,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     # Execute the body of the with statement
                     for stmt in node.body:
                         self.visit(stmt)
-                        # Track any new variables defined in the body
-                        if isinstance(stmt, ast.Assign):
-                            for target in stmt.targets:
-                                if isinstance(target, ast.Name):
-                                    scope.locals.add(target.id)
                 except Exception as body_exc:
                     # Handle any exception from the body
                     if not self._exit_context_managers(
@@ -1052,30 +1047,26 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         """
         # Track if any context manager suppresses the exception
         suppressed = False
-
-        if exc_info is not None:
-            exc_type = type(exc_info)
-            exc_value = exc_info
-            exc_tb = exc_info.__traceback__
-        else:
-            exc_type = None
-            exc_value = None
-            exc_tb = None
+        new_exc_info = exc_info
 
         # Exit context managers in reverse order
         for cm, _ in reversed(context_managers):
             try:
-                if cm.__exit__(exc_type, exc_value, exc_tb):
+                if cm.__exit__(
+                    type(new_exc_info) if new_exc_info else None,
+                    new_exc_info if new_exc_info else None,
+                    new_exc_info.__traceback__ if new_exc_info else None,
+                ):
                     suppressed = True
-                    exc_type = None
-                    exc_value = None
-                    exc_tb = None
+                    new_exc_info = None
             except Exception as exit_exc:
                 # If __exit__ raises an exception, update the exception info
-                exc_type = type(exit_exc)
-                exc_value = exit_exc
-                exc_tb = exit_exc.__traceback__
+                new_exc_info = exit_exc
                 suppressed = False
+
+        # If we have a new exception from __exit__, raise it
+        if new_exc_info is not None and new_exc_info is not exc_info:
+            raise new_exc_info
 
         return suppressed
 
