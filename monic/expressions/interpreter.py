@@ -1501,10 +1501,47 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         return func
 
     def _is_generator(self, node: ast.FunctionDef) -> bool:
-        return any(
-            isinstance(stmt, (ast.Yield, ast.YieldFrom))
-            for stmt in ast.walk(node)
-        )
+        """
+        Checks if a function definition is a generator, ignoring yields in
+        nested defs.
+
+        It performs a BFS-like traversal on the function body.
+        Whenever it encounters a FunctionDef, AsyncFunctionDef, or ClassDef,
+        it skips exploring their children (thus ignoring nested yields).
+        """
+        # Initialize a queue with the statements in the function's body
+        queue: list[ast.AST] = list(node.body)
+
+        while queue:
+            stmt = queue.pop(0)
+
+            # If the statement itself is Yield or YieldFrom, it's a generator
+            if isinstance(stmt, (ast.Yield, ast.YieldFrom)):
+                return True
+
+            # Skip nested functions and classes entirely
+            if isinstance(
+                stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
+                continue
+
+            # For other statements, explore child nodes
+            for child in ast.iter_child_nodes(stmt):
+                # Again, skip if it's a nested function/class
+                if isinstance(
+                    child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                ):
+                    continue
+
+                # If a child node is Yield or YieldFrom, it's a generator
+                if isinstance(child, (ast.Yield, ast.YieldFrom)):
+                    return True
+
+                # Otherwise, keep traversing
+                queue.append(child)
+
+        # No yield found in the top-level function body
+        return False
 
     def visit_FunctionDef(
         self, node: ast.FunctionDef
