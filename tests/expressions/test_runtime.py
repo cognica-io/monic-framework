@@ -6,6 +6,8 @@
 
 import datetime
 
+import pytest
+
 from monic.expressions import ExpressionsParser, ExpressionsInterpreter
 
 
@@ -58,10 +60,28 @@ current_datetime = datetime.datetime.now()
     )
 
 
+def _has_module(module_name: str) -> bool:
+    code = f"""
+    def is_available():
+        try:
+            {module_name}
+            return True
+        except NameError:
+            return False
+
+    is_available()
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    return interpreter.execute(tree)
+
+
+@pytest.mark.skipif(not _has_module("np"), reason="Numpy is not available")
 def test_numpy_runtime():
     code = """
-arr = np.array([1, 2, 3])
-mean_val = np.mean(arr)
+    arr = np.array([1, 2, 3])
+    mean_val = np.mean(arr)
 """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -72,10 +92,11 @@ mean_val = np.mean(arr)
     assert isinstance(interpreter.local_env["mean_val"], (int, float))
 
 
+@pytest.mark.skipif(not _has_module("pd"), reason="Pandas is not available")
 def test_pandas_runtime():
     code = """
-df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-mean_val = df["a"].mean()
+    df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    mean_val = df["a"].mean()
 """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -86,10 +107,11 @@ mean_val = df["a"].mean()
     assert isinstance(interpreter.local_env["mean_val"], (int, float))
 
 
+@pytest.mark.skipif(not _has_module("pl"), reason="Polars is not available")
 def test_polars_runtime():
     code = """
-df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-mean_val = df["a"].mean()
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    mean_val = df["a"].mean()
 """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
