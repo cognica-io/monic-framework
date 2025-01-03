@@ -1743,7 +1743,19 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             TypeError: If keyword argument is invalid
         """
         # Evaluate positional arguments
-        pos_args = [self.visit(arg) for arg in args]
+        pos_args: list[t.Any] = []
+        for arg in args:
+            if isinstance(arg, ast.Starred):
+                # Handle starred expressions (e.g., *args)
+                value = self.visit(arg.value)
+                if not isinstance(value, (list, tuple)):
+                    raise TypeError(
+                        f"cannot unpack non-iterable {type(value).__name__} "
+                        "object"
+                    )
+                pos_args.extend(value)
+            else:
+                pos_args.append(self.visit(arg))
 
         # Evaluate keyword arguments
         kwargs = {}
