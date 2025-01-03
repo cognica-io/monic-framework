@@ -1611,6 +1611,30 @@ def test_scope_context_with_saved_env():
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
 
+    # Test environment saving and restoration
+    code = """
+x = 1
+y = 2
+def outer():
+    x = 3
+    y = 4
+    def inner():
+        nonlocal x
+        x = 5
+        return x, y
+    result = inner()
+    return result, x, y
+
+result1, result2, result3 = outer()
+result4, result5 = x, y
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result1"] == (5, 4)
+    assert interpreter.local_env["result2"] == 5
+    assert interpreter.local_env["result3"] == 4
+    assert interpreter.local_env["result4"] == 1
+    assert interpreter.local_env["result5"] == 2
+
     # Test exception handling with environment restoration
     code = """
 x = 1
