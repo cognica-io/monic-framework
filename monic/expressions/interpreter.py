@@ -47,6 +47,27 @@ class YieldFromValue(Exception):
         self.iterator = iterator
 
 
+class AwaitableValue:
+    """Represents an awaitable value."""
+
+    def __init__(self, value: t.Any) -> None:
+        self.value = value
+
+    def __await__(self):
+        yield self.value
+        return self.value
+
+
+class AsyncFunction:
+    """Represents an async function."""
+
+    def __init__(self, func: t.Callable[..., t.Any]) -> None:
+        self.func = func
+
+    def __call__(self, *args: t.Any, **kwargs: t.Any) -> AwaitableValue:
+        return AwaitableValue(self.func(*args, **kwargs))
+
+
 @dataclass
 class Scope:
     # Names declared as global
@@ -1326,7 +1347,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
     def _process_nonlocal_declarations(
         self,
-        func_def: ast.FunctionDef,
+        func_def: ast.FunctionDef | ast.AsyncFunctionDef,
         scope: Scope,
     ) -> None:
         """Process nonlocal declarations in function body."""
@@ -1380,9 +1401,54 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 closure_env[name] = self.local_env[name]
                 outer_env[name] = self.local_env[name]
 
+    def _is_generator(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> bool:
+        """
+        Checks if a function definition is a generator, ignoring yields in
+        nested defs.
+
+        It performs a BFS-like traversal on the function body.
+        Whenever it encounters a FunctionDef, AsyncFunctionDef, or ClassDef,
+        it skips exploring their children (thus ignoring nested yields).
+        """
+        # Initialize a queue with the statements in the function's body
+        queue: list[ast.AST] = list(node.body)
+
+        while queue:
+            stmt = queue.pop(0)
+
+            # If the statement itself is Yield or YieldFrom, it's a generator
+            if isinstance(stmt, (ast.Yield, ast.YieldFrom)):
+                return True
+
+            # Skip nested functions and classes entirely
+            if isinstance(
+                stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
+                continue
+
+            # For other statements, explore child nodes
+            for child in ast.iter_child_nodes(stmt):
+                # Again, skip if it's a nested function/class
+                if isinstance(
+                    child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                ):
+                    continue
+
+                # If a child node is Yield or YieldFrom, it's a generator
+                if isinstance(child, (ast.Yield, ast.YieldFrom)):
+                    return True
+
+                # Otherwise, keep traversing
+                queue.append(child)
+
+        # No yield found in the top-level function body
+        return False
+
     def _create_generator_closure(
         self,
-        func_def: ast.FunctionDef,
+        func_def: ast.FunctionDef | ast.AsyncFunctionDef,
         outer_env: dict[str, t.Any],
         closure_env: dict[str, t.Any],
         defaults: list[t.Any],
@@ -1459,52 +1525,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         return func
 
-    def _is_generator(self, node: ast.FunctionDef) -> bool:
-        """
-        Checks if a function definition is a generator, ignoring yields in
-        nested defs.
-
-        It performs a BFS-like traversal on the function body.
-        Whenever it encounters a FunctionDef, AsyncFunctionDef, or ClassDef,
-        it skips exploring their children (thus ignoring nested yields).
-        """
-        # Initialize a queue with the statements in the function's body
-        queue: list[ast.AST] = list(node.body)
-
-        while queue:
-            stmt = queue.pop(0)
-
-            # If the statement itself is Yield or YieldFrom, it's a generator
-            if isinstance(stmt, (ast.Yield, ast.YieldFrom)):
-                return True
-
-            # Skip nested functions and classes entirely
-            if isinstance(
-                stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-            ):
-                continue
-
-            # For other statements, explore child nodes
-            for child in ast.iter_child_nodes(stmt):
-                # Again, skip if it's a nested function/class
-                if isinstance(
-                    child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-                ):
-                    continue
-
-                # If a child node is Yield or YieldFrom, it's a generator
-                if isinstance(child, (ast.Yield, ast.YieldFrom)):
-                    return True
-
-                # Otherwise, keep traversing
-                queue.append(child)
-
-        # No yield found in the top-level function body
-        return False
-
     def _create_function_closure(
         self,
-        func_def: ast.FunctionDef,
+        func_def: ast.FunctionDef | ast.AsyncFunctionDef,
         outer_env: dict[str, t.Any],
         closure_env: dict[str, t.Any],
         defaults: list[t.Any],
@@ -1622,6 +1645,75 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         finally:
             self.scope_stack.pop()
 
+    def visit_AsyncFunctionDef(
+        self, node: ast.AsyncFunctionDef
+    ) -> t.Callable[..., t.Any]:
+        """Handle async function definition.
+
+        Args:
+            node: The AsyncFunctionDef AST node
+
+        Returns:
+            The created async function
+        """
+        def_scope = Scope()
+        self.scope_stack.append(def_scope)
+
+        try:
+            # Validate nonlocal declarations at function definition time
+            self._validate_nonlocal_declarations(node.body, self.scope_stack)
+
+            closure_env: t.Dict[str, t.Any] = {}
+            outer_env: t.Dict[str, t.Any] = self.local_env
+
+            # Precompute default values for positional and kw-only
+            defaults = [self.visit(d) for d in node.args.defaults]
+            kw_defaults = [
+                None if d is None else self.visit(d)
+                for d in node.args.kw_defaults
+            ]
+
+            # e.g. if we have 3 positional params and 1 default then
+            # required_count=2
+            required_count = len(node.args.args) - len(defaults)
+
+            # Create the async function closure
+            if self._is_generator(node):
+                func = self._create_generator_closure(
+                    func_def=node,
+                    outer_env=outer_env,
+                    closure_env=closure_env,
+                    defaults=defaults,
+                    kw_defaults=kw_defaults,
+                    required_count=required_count,
+                )
+            else:
+                func = self._create_function_closure(
+                    func_def=node,
+                    outer_env=outer_env,
+                    closure_env=closure_env,
+                    defaults=defaults,
+                    kw_defaults=kw_defaults,
+                    required_count=required_count,
+                )
+
+            # Wrap the function in AsyncFunction
+            async_func = AsyncFunction(func)
+
+            # Apply decorators in reverse order
+            for decorator in reversed(node.decorator_list):
+                decorator_func = self.visit(decorator)
+                if decorator_func is not None:
+                    async_func = decorator_func(async_func)
+
+            # Register the function in the current scope
+            self._set_name_value(node.name, async_func)
+
+            # Return the function
+            return async_func
+        finally:
+            self.scope_stack.pop()
+
     def _create_lambda_closure(
         self,
         node: ast.Lambda,
@@ -1726,6 +1818,40 @@ class ExpressionsInterpreter(ast.NodeVisitor):
     def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
         iterator = self.visit(node.value)
         raise YieldFromValue(iterator)
+
+    def visit_Await(self, node: ast.Await) -> t.Any:
+        """Handle await expressions.
+
+        Args:
+            node: The Await AST node
+
+        Returns:
+            The awaited value
+
+        Raises:
+            TypeError: If the value is not awaitable
+        """
+        value = self.visit(node.value)
+
+        # If the value is already an AwaitableValue, return its value
+        if isinstance(value, AwaitableValue):
+            return value.value
+
+        # If the value has __await__, call it and get the value
+        if hasattr(value, "__await__"):
+            try:
+                iterator = value.__await__()
+                try:
+                    while True:
+                        next(iterator)
+                except StopIteration as e:
+                    return e.value
+            except Exception as e:
+                raise TypeError(
+                    f"object {value!r} did not yield from its __await__ method"
+                ) from e
+
+        raise TypeError(f"object {value!r} is not awaitable")
 
     def _evaluate_call_arguments(
         self, args: list[ast.expr], keywords: list[ast.keyword]
