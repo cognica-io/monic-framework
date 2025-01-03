@@ -1323,89 +1323,61 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     f"'{first_unexpected}'"
                 )
 
-    def _create_function_closure(
+    def _process_nonlocal_declarations(
         self,
         func_def: ast.FunctionDef,
-        outer_env: dict[str, t.Any],
+        scope: Scope,
+    ) -> None:
+        """Process nonlocal declarations in function body."""
+        for stmt in func_def.body:
+            if isinstance(stmt, ast.Nonlocal):
+                for name in stmt.names:
+                    found = False
+                    # Check all outer scopes (excluding the current scope)
+                    for outer_scope in reversed(self.scope_stack[:-1]):
+                        if (
+                            name in outer_scope.locals
+                            or name in outer_scope.nonlocals
+                            or name in self.local_env
+                        ):
+                            found = True
+                            break
+                    if not found:
+                        raise SyntaxError(
+                            f"No binding for nonlocal '{name}' found "
+                            "in outer scopes"
+                        )
+                    # Mark this name as nonlocal in the current scope
+                    scope.nonlocals.add(name)
+
+    def _handle_yield_from_assignment(
+        self,
+        stmt: ast.Assign,
+    ) -> t.Generator[t.Any, None, None]:
+        """Handle yield from in assignment context."""
+        try:
+            if not isinstance(stmt.value, ast.YieldFrom):
+                raise ValueError("Expected YieldFrom node")
+            value = yield from self.visit(stmt.value.value)
+        except StopIteration as e:
+            value = e.value if e.args else None
+
+        # Store the value in the target
+        for target in stmt.targets:
+            if isinstance(target, ast.Name):
+                self._set_name_value(target.id, value)
+
+    def _update_closure_env(
+        self,
+        scope: Scope,
         closure_env: dict[str, t.Any],
-        defaults: list[t.Any],
-        kw_defaults: list[t.Any | None],
-        required_count: int,
-    ) -> t.Callable[..., t.Any]:
-        """Create a closure for the function definition."""
-
-        def func(*call_args, **call_kwargs):
-            # Create a new execution scope
-            func_scope = Scope()
-            self.scope_stack.append(func_scope)
-
-            prev_env = self.local_env
-            # Build local env from outer + closure
-            self.local_env = {**outer_env, **closure_env}
-
-            self.control.function_depth += 1
-
-            try:
-                # Register the function name itself for recursion
-                self.local_env[func_def.name] = func
-
-                # Process nonlocal declarations at function execution time
-                for stmt in func_def.body:
-                    if isinstance(stmt, ast.Nonlocal):
-                        for name in stmt.names:
-                            found = False
-                            # Check all outer scopes
-                            # (excluding the current scope)
-                            for scope in reversed(self.scope_stack[:-1]):
-                                if (
-                                    name in scope.locals
-                                    or name in scope.nonlocals
-                                    or name in self.local_env
-                                ):
-                                    found = True
-                                    break
-                            if not found:
-                                raise SyntaxError(
-                                    f"No binding for nonlocal '{name}' found "
-                                    "in outer scopes"
-                                )
-                            # Mark this name as nonlocal in the current scope
-                            self.current_scope.nonlocals.add(name)
-
-                # Process function parameters
-                self._process_function_parameters(
-                    func_def.name,
-                    call_args,
-                    call_kwargs,
-                    func_def.args.args,
-                    defaults,
-                    required_count,
-                    func_def.args.kwonlyargs,
-                    kw_defaults,
-                    func_def.args.vararg,
-                    func_def.args.kwarg,
-                )
-
-                # Execute function body
-                try:
-                    for stmt in func_def.body:
-                        self.visit(stmt)
-                    return None
-                except ReturnValue as rv:
-                    return rv.value
-            finally:
-                self.control.function_depth -= 1
-
-                # Update nonlocals
-                for name in func_scope.nonlocals:
-                    if name in self.local_env:
-                        closure_env[name] = self.local_env[name]
-                        outer_env[name] = self.local_env[name]
-
-                self.local_env = prev_env
-                self.scope_stack.pop()
-
-        return func
+        outer_env: dict[str, t.Any],
+    ) -> None:
+        """Update closure environment with nonlocal variables."""
+        for name in scope.nonlocals:
+            if name in self.local_env:
+                closure_env[name] = self.local_env[name]
+                outer_env[name] = self.local_env[name]
 
     def _create_generator_closure(
         self,
@@ -1432,32 +1404,10 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             try:
                 # Register the function name itself for recursion
                 self.local_env[func_def.name] = func
-
-                # Create a generator iterator
                 self.local_env["__iter__"] = iter
 
-                # Process nonlocal declarations at function execution time
-                for stmt in func_def.body:
-                    if isinstance(stmt, ast.Nonlocal):
-                        for name in stmt.names:
-                            found = False
-                            # Check all outer scopes
-                            # (excluding the current scope)
-                            for scope in reversed(self.scope_stack[:-1]):
-                                if (
-                                    name in scope.locals
-                                    or name in scope.nonlocals
-                                    or name in self.local_env
-                                ):
-                                    found = True
-                                    break
-                            if not found:
-                                raise SyntaxError(
-                                    f"No binding for nonlocal '{name}' found "
-                                    "in outer scopes"
-                                )
-                            # Mark this name as nonlocal in the current scope
-                            self.current_scope.nonlocals.add(name)
+                # Process nonlocal declarations
+                self._process_nonlocal_declarations(func_def, func_scope)
 
                 # Process function parameters
                 self._process_function_parameters(
@@ -1477,7 +1427,14 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 try:
                     for stmt in func_def.body:
                         try:
-                            self.visit(stmt)
+                            if isinstance(stmt, ast.Assign) and isinstance(
+                                stmt.value, ast.YieldFrom
+                            ):
+                                yield from self._handle_yield_from_assignment(
+                                    stmt
+                                )
+                            else:
+                                self.visit(stmt)
                         except YieldValue as yv:
                             yield yv.value
                         except YieldFromValue as yfv:
@@ -1488,13 +1445,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     return rv.value
             finally:
                 self.control.function_depth -= 1
-
-                # Update nonlocals
-                for name in func_scope.nonlocals:
-                    if name in self.local_env:
-                        closure_env[name] = self.local_env[name]
-                        outer_env[name] = self.local_env[name]
-
+                self._update_closure_env(func_scope, closure_env, outer_env)
                 self.local_env = prev_env
                 self.scope_stack.pop()
 
@@ -1542,6 +1493,64 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         # No yield found in the top-level function body
         return False
+
+    def _create_function_closure(
+        self,
+        func_def: ast.FunctionDef,
+        outer_env: dict[str, t.Any],
+        closure_env: dict[str, t.Any],
+        defaults: list[t.Any],
+        kw_defaults: list[t.Any | None],
+        required_count: int,
+    ) -> t.Callable[..., t.Any]:
+        """Create a closure for the function definition."""
+
+        def func(*call_args, **call_kwargs):
+            # Create a new execution scope
+            func_scope = Scope()
+            self.scope_stack.append(func_scope)
+
+            prev_env = self.local_env
+            # Build local env from outer + closure
+            self.local_env = {**outer_env, **closure_env}
+
+            self.control.function_depth += 1
+
+            try:
+                # Register the function name itself for recursion
+                self.local_env[func_def.name] = func
+
+                # Process nonlocal declarations
+                self._process_nonlocal_declarations(func_def, func_scope)
+
+                # Process function parameters
+                self._process_function_parameters(
+                    func_def.name,
+                    call_args,
+                    call_kwargs,
+                    func_def.args.args,
+                    defaults,
+                    required_count,
+                    func_def.args.kwonlyargs,
+                    kw_defaults,
+                    func_def.args.vararg,
+                    func_def.args.kwarg,
+                )
+
+                # Execute function body
+                try:
+                    for stmt in func_def.body:
+                        self.visit(stmt)
+                    return None
+                except ReturnValue as rv:
+                    return rv.value
+            finally:
+                self.control.function_depth -= 1
+                self._update_closure_env(func_scope, closure_env, outer_env)
+                self.local_env = prev_env
+                self.scope_stack.pop()
+
+        return func
 
     def visit_FunctionDef(
         self, node: ast.FunctionDef
