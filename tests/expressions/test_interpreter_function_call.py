@@ -264,3 +264,73 @@ def test_function_nonlocal():
     assert interpreter.get_name_value("result1") == 1
     assert interpreter.get_name_value("result2") == 2
     assert interpreter.get_name_value("result3") == 3
+
+
+def test_function_async_await():
+    """Test async/await functionality.
+
+    Tests:
+    1. Basic async function
+    2. Await expression
+    3. Multiple awaits
+    4. Async function with return value
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test basic async function
+    code = """
+async def simple_async():
+    return 42
+
+result = await simple_async()
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result"] == 42
+
+    # Test await expression
+    code = """
+async def get_value():
+    return 42
+
+async def use_value():
+    value = await get_value()
+    return value * 2
+
+result = await use_value()
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result"] == 84
+
+    # Test multiple awaits
+    code = """
+async def get_number(n):
+    return n
+
+async def sum_numbers():
+    a = await get_number(10)
+    b = await get_number(20)
+    c = await get_number(30)
+    return a + b + c
+
+result = await sum_numbers()
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result"] == 60
+
+    # Test async function with return value
+    code = """
+async def process_data(data):
+    result = []
+    for item in data:
+        value = await get_number(item)
+        result.append(value * 2)
+    return result
+
+async def get_number(n):
+    return n
+
+result = await process_data([1, 2, 3])
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result"] == [2, 4, 6]
