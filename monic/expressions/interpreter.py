@@ -251,8 +251,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         result = self.visit(stmt.value)
                         self.global_env["_"] = result
                     else:
-                        # For other statements, just execute them
-                        self.visit(stmt)
+                        # For other statements, execute them and possibly
+                        # return the result
+                        result = self.visit(stmt)
                 return result
             else:
                 result = self.visit(tree)
