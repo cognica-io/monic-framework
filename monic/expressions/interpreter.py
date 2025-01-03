@@ -29,21 +29,21 @@ from monic.expressions.semantic import SemanticAnalyzer
 class ReturnValue(Exception):
     """Raised to return a value from a function."""
 
-    def __init__(self, value):
+    def __init__(self, value: t.Any) -> None:
         self.value = value
 
 
 class YieldValue(Exception):
     """Raised to yield a value from a generator."""
 
-    def __init__(self, value):
+    def __init__(self, value: t.Any) -> None:
         self.value = value
 
 
 class YieldFromValue(Exception):
     """Raised to yield an iterator from a generator."""
 
-    def __init__(self, iterator):
+    def __init__(self, iterator: t.Iterator[t.Any]) -> None:
         self.iterator = iterator
 
 
