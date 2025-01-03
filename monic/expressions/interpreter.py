@@ -1506,7 +1506,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             for stmt in ast.walk(node)
         )
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+    def visit_FunctionDef(
+        self, node: ast.FunctionDef
+    ) -> t.Callable[..., t.Any]:
         """
         Handle function definition with support for named parameters, defaults,
         keyword-only, *args, and **kwargs.
@@ -1560,6 +1562,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
             # Register the function in the current scope
             self._set_name_value(node.name, func)
+
+            # Return the function
+            return func
         finally:
             self.scope_stack.pop()
 
