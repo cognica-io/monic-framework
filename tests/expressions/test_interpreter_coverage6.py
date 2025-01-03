@@ -1912,3 +1912,58 @@ result = test_state_tracking()
         "exit depth 2",
         "exit depth 1",
     ]
+
+    # Test multiple context managers in single with statement
+    code = """
+class Resource:
+    def __init__(self, name, fail_on_exit=False):
+        self.name = name
+        self.fail_on_exit = fail_on_exit
+        self.events = []
+
+    def __enter__(self):
+        self.events.append(f"acquire {self.name}")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.events.append(f"release {self.name}")
+        if self.fail_on_exit:
+            raise RuntimeError(f"exit error in {self.name}")
+        return False
+
+def test_multiple_contexts():
+    r1 = Resource("r1")
+    r2 = Resource("r2", fail_on_exit=True)
+    r3 = Resource("r3")
+    result = []
+
+    try:
+        with r1 as res1, r2 as res2, r3 as res3:
+            result.extend(res1.events)
+            result.extend(res2.events)
+            result.extend(res3.events)
+            result.append("using resources")
+    except RuntimeError as e:
+        result.append(f"error: {str(e)}")
+
+    result.extend(r1.events)
+    result.extend(r2.events)
+    result.extend(r3.events)
+    return result
+
+result = test_multiple_contexts()
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result"] == [
+        "acquire r1",
+        "acquire r2",
+        "acquire r3",
+        "using resources",
+        "error: exit error in r2",
+        "acquire r1",
+        "release r1",
+        "acquire r2",
+        "release r2",
+        "acquire r3",
+        "release r3",
+    ]
