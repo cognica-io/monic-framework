@@ -1650,6 +1650,29 @@ result4, result5 = x, y
     assert interpreter.local_env["result4"] == 1
     assert interpreter.local_env["result5"] == 2
 
+    # Test variable inheritance and updates
+    code = """
+x = 1
+def level1():
+    y = 2
+    def level2():
+        nonlocal y    # TODO: We should not use nonlocal here. CPython does not require it.
+        z = 3
+        def level3():
+            nonlocal y, z
+            y = 4
+            z = 5
+            return x, y, z
+        result1 = level3()
+        return result1, y, z
+    result2 = level2()
+    return result2, y
+
+result = level1()
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result"] == (((1, 4, 5), 4, 5), 4)
+
     # Test exception handling with environment restoration
     code = """
 x = 1
