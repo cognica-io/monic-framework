@@ -1598,6 +1598,21 @@ result = make_matrix()
     interpreter.execute(parser.parse(code))
     assert interpreter.local_env["result"] == [[3, 4], [4, 5]]
 
+    # Test comprehension with nonlocal variables
+    code = """
+def outer():
+    count = 0
+    def inner():
+        nonlocal count
+        result = [count := count + i for i in range(3)]
+        return result, count
+    return inner()
+
+result = outer()
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.local_env["result"] == ([0, 1, 3], 3)
+
 
 def test_scope_context_with_saved_env():
     """Test scope context with saved environment in detail.
