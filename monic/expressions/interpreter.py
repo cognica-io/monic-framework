@@ -1551,8 +1551,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                                     f"type {type(yfv.iterator).__name__}"
                                 ) from e
                             yield from yfv.iterator
-                        except StopIteration:
-                            return None
                 except ReturnValue as rv:
                     return rv.value
             finally:
@@ -1560,6 +1558,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 self._update_closure_env(func_scope, closure_env, outer_env)
                 self.local_env = prev_env
                 self.scope_stack.pop()
+
+            return None
 
         return func
 
@@ -1610,7 +1610,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 try:
                     for stmt in func_def.body:
                         self.visit(stmt)
-                    return None
                 except ReturnValue as rv:
                     return rv.value
             finally:
@@ -1618,6 +1617,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 self._update_closure_env(func_scope, closure_env, outer_env)
                 self.local_env = prev_env
                 self.scope_stack.pop()
+
+            return None
 
         return func
 
