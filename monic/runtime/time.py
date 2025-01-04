@@ -17,3 +17,8 @@ def time_time() -> float:
 @monic_bind_default("time.monotonic")
 def time_monotonic() -> float:
     return time.monotonic()
+
+
+@monic_bind_default("time.is_available")
+def time_is_available() -> bool:
+    return True

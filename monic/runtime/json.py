@@ -18,3 +18,8 @@ def json_dumps(obj, *args, **kwargs) -> str:
 @monic_bind_default("json.loads")
 def json_loads(s, *args, **kwargs) -> t.Any:
     return json.loads(s, *args, **kwargs)
+
+
+@monic_bind_default("json.is_available")
+def json_is_available() -> bool:
+    return True
