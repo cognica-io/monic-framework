@@ -62,14 +62,7 @@ current_datetime = datetime.datetime.now()
 
 def _has_module(module_name: str) -> bool:
     code = f"""
-    def is_available():
-        try:
-            {module_name}
-            return True
-        except NameError:
-            return False
-
-    is_available()
+    {module_name}.is_available()
     """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
