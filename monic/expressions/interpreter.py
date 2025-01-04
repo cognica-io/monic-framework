@@ -208,7 +208,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "anext": anext,
             "type": type,
             "object": object,
-
             # Built-in types
             "bool": bool,
             "int": int,
@@ -221,13 +220,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "dict": dict,
             "frozenset": frozenset,
             "complex": complex,
-
             # Constants
             "None": None,
             "True": True,
             "False": False,
             "Ellipsis": Ellipsis,
-
             # Exceptions
             "Exception": Exception,
             "ValueError": ValueError,
@@ -366,8 +363,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         raise NameError(f"Name '{name}' is not defined")
 
     def _set_name_value(self, name: str, value: t.Any) -> None:
-        """
-        Set the value of a name, considering 'global' and 'nonlocal'
+        """Set a name's value in the appropriate scope according to scope
         declarations.
         """
         # Special case for '_'
@@ -392,6 +388,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 ):
                     # Found the appropriate scope, set value in local_env
                     self.local_env[name] = value
+                    # Also update the value in the outer scope's locals
+                    scope.locals.add(name)
                     return
             raise NameError(f"Nonlocal name '{name}' not found in outer scopes")
 
@@ -741,17 +739,42 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         if not isinstance(node.target, ast.Name):
             raise SyntaxError("Invalid target for named expression")
 
-        # Named expressions bind in the containing scope
-        if len(self.scope_stack) > 1:
-            # If we're in a nested scope, add to the parent scope
-            parent_scope = self.scope_stack[-2]
-            parent_scope.locals.add(node.target.id)
-        else:
-            # In the global scope, add to current scope
-            self.current_scope.locals.add(node.target.id)
+        # Check if the variable is declared as nonlocal
+        is_nonlocal = False
+        for scope in reversed(self.scope_stack):
+            if node.target.id in scope.nonlocals:
+                is_nonlocal = True
+                break
 
-        # Set the value in the current environment
-        self.local_env[node.target.id] = value
+        if is_nonlocal:
+            # For nonlocal variables, use _set_name_value to handle scope
+            # properly
+            self._set_name_value(node.target.id, value)
+            # Also update the value in the current environment and outer
+            # environment
+            self.local_env[node.target.id] = value
+            # Find the outer scope that contains the nonlocal variable
+            for i in range(len(self.scope_stack) - 2, -1, -1):
+                scope = self.scope_stack[i]
+                if (
+                    node.target.id in scope.locals
+                    or node.target.id in scope.nonlocals
+                ):
+                    scope.locals.add(node.target.id)
+                    break
+        else:
+            # Named expressions bind in the containing scope
+            if len(self.scope_stack) > 1:
+                # If we're in a nested scope, add to the parent scope
+                parent_scope = self.scope_stack[-2]
+                parent_scope.locals.add(node.target.id)
+            else:
+                # In the global scope, add to current scope
+                self.current_scope.locals.add(node.target.id)
+
+            # Set the value in the current environment
+            self.local_env[node.target.id] = value
+
         return value
 
     def visit_BoolOp(self, node: ast.BoolOp) -> t.Any:
@@ -2121,13 +2144,18 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         Returns:
             Tuple of (new scope, outer environment)
         """
-        # Create new scope for the comprehension
+        # Create a new scope for the comprehension
         comp_scope = Scope()
         self.scope_stack.append(comp_scope)
 
         # Copy the outer environment
         outer_env = self.local_env
         self.local_env = outer_env.copy()
+
+        # Copy nonlocal declarations from parent scope
+        if len(self.scope_stack) > 1:
+            parent_scope = self.scope_stack[-2]
+            comp_scope.nonlocals.update(parent_scope.nonlocals)
 
         return comp_scope, outer_env
 
@@ -2157,6 +2185,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Restore environment from before this generator's loop
         self.local_env = current_env.copy()
 
+        # Copy nonlocal values from outer environment
+        for name in self.current_scope.nonlocals:
+            if name in outer_env:
+                self.local_env[name] = outer_env[name]
+
         try:
             self._handle_unpacking_target(generator.target, item)
         except (TypeError, ValueError, SyntaxError) as e:
@@ -2166,14 +2199,12 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 raise e
 
         # Check if all conditions are met
-        conditions_met = all(
-            self.visit(if_clause) for if_clause in generator.ifs
-        )
+        conditions_met = all(self.visit(if_test) for if_test in generator.ifs)
 
-        # Update outer environment with any named expression bindings
-        for name, value in self.local_env.items():
-            if name not in current_env:
-                outer_env[name] = value
+        # Update outer environment with any nonlocal changes
+        for name in self.current_scope.nonlocals:
+            if name in self.local_env:
+                outer_env[name] = self.local_env[name]
 
         return conditions_met
 
@@ -2189,7 +2220,18 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         Returns:
             The evaluated comprehension result
         """
-        _, outer_env = self._setup_comprehension_scope()
+        # Create a new scope for the comprehension
+        comp_scope = Scope()
+        self.scope_stack.append(comp_scope)
+
+        # Copy the outer environment
+        outer_env = self.local_env
+        self.local_env = outer_env.copy()
+
+        # Copy nonlocal declarations from parent scope
+        if len(self.scope_stack) > 1:
+            parent_scope = self.scope_stack[-2]
+            comp_scope.nonlocals.update(parent_scope.nonlocals)
 
         try:
             result: list[t.Any] = []
@@ -2208,14 +2250,35 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 current_env = self.local_env.copy()
 
                 for item in iter_obj:
+                    # Restore environment but keep nonlocal values
+                    self.local_env = current_env.copy()
+                    for name in self.current_scope.nonlocals:
+                        if name in outer_env:
+                            self.local_env[name] = outer_env[name]
+
                     if self._process_generator_item(
                         generator, item, current_env, outer_env
                     ):
-                        # Process next generator or append result
+                        # Process next generator
                         process_generator(generators, index + 1)
+
+                    # Update outer environment with any nonlocal changes
+                    for name in self.current_scope.nonlocals:
+                        if name in self.local_env:
+                            outer_env[name] = self.local_env[name]
 
             # Start processing generators recursively
             process_generator(node.generators)
+
+            # Update outer environment with any variables assigned by walrus
+            # operator
+            for name, value in self.local_env.items():
+                if name not in outer_env:
+                    outer_env[name] = value
+                    if len(self.scope_stack) > 1:
+                        parent_scope = self.scope_stack[-2]
+                        parent_scope.locals.add(name)
+
             return result_type(result)
         finally:
             # Restore the outer environment and pop the scope
