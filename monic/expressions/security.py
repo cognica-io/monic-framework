@@ -34,6 +34,11 @@ class SecurityChecker(ast.NodeVisitor):
 
     # List of forbidden attribute accesses
     FORBIDDEN_ATTRS = {
+        # Module attributes
+        "__builtins__",
+        "__loader__",
+        "__spec__",
+        # Class and instance attributes
         "__code__",
         "__globals__",
         "__class__",
