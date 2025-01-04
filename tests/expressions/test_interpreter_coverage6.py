@@ -1081,9 +1081,12 @@ result = _
 def add(x, y):
     return x + y
 
+def none():
+    return None
+
 result1 = add(2, 3)
-print("test")  # Expression statement
-result2 = _  # Should be None from print
+none()
+result2 = _  # Should be None from none()
 5 + 3  # Expression statement
 result3 = _  # Should be 8
 """
