@@ -179,6 +179,16 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "min": min,
             "max": max,
             "sum": sum,
+            "round": round,
+            "pow": pow,
+            "divmod": divmod,
+            "id": id,
+            "hex": hex,
+            "oct": oct,
+            "bin": bin,
+            "chr": chr,
+            "ord": ord,
+            "repr": repr,
             "sorted": sorted,
             "reversed": reversed,
             "zip": zip,
@@ -189,24 +199,35 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "all": all,
             "isinstance": isinstance,
             "issubclass": issubclass,
+            "callable": callable,
             "getattr": getattr,
             "hasattr": hasattr,
             "iter": iter,
             "next": next,
+            "aiter": aiter,
+            "anext": anext,
             "type": type,
+            "object": object,
+
             # Built-in types
             "bool": bool,
             "int": int,
             "float": float,
+            "bytes": bytes,
             "str": str,
             "list": list,
             "tuple": tuple,
             "set": set,
             "dict": dict,
+            "frozenset": frozenset,
+            "complex": complex,
+
             # Constants
             "None": None,
             "True": True,
             "False": False,
+            "Ellipsis": Ellipsis,
+
             # Exceptions
             "Exception": Exception,
             "ValueError": ValueError,
@@ -222,6 +243,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "IndentationError": IndentationError,
             "AttributeError": AttributeError,
             "SecurityError": SecurityError,
+            "ImportError": ImportError,
+            "NotImplementedError": NotImplementedError,
+            "NotImplemented": NotImplemented,
         }
 
         # Add bound objects in registry to global environment
