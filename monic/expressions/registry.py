@@ -371,7 +371,8 @@ class Registry:
                     if isinstance(value, dict):
                         result[name].__dict__.update(value)
                 else:
-                    result[name] = value
+                    # This should never happen
+                    result[name] = value  # pragma: no cover
             else:
                 if isinstance(value, dict):
                     result[name] = NamespaceProxy(value)
@@ -383,7 +384,8 @@ class Registry:
                     if isinstance(value, dict):
                         result[name].__dict__.update(value)
                 else:
-                    result[name] = value
+                    # This should never happen
+                    result[name] = value  # pragma: no cover
             else:
                 if isinstance(value, dict):
                     result[name] = NamespaceProxy(value)
