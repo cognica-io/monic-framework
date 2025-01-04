@@ -362,18 +362,33 @@ class Registry:
             wrapped in NamespaceProxy objects.
         """
         result: dict[str, t.Any] = {}
-        for name, value in self._default_objects.items():
-            if isinstance(value, dict):
-                result[name] = NamespaceProxy(value)
-            else:
-                result[name] = value
-        for name, value in self._objects.items():
-            if isinstance(value, dict):
-                result[name] = NamespaceProxy(value)
-            else:
-                result[name] = value
         result.update(self._default_modules)
         result.update(self._modules)
+
+        for name, value in self._default_objects.items():
+            if name in result:
+                if isinstance(result[name], types.ModuleType):
+                    if isinstance(value, dict):
+                        result[name].__dict__.update(value)
+                else:
+                    result[name] = value
+            else:
+                if isinstance(value, dict):
+                    result[name] = NamespaceProxy(value)
+                else:
+                    result[name] = value
+        for name, value in self._objects.items():
+            if name in result:
+                if isinstance(result[name], types.ModuleType):
+                    if isinstance(value, dict):
+                        result[name].__dict__.update(value)
+                else:
+                    result[name] = value
+            else:
+                if isinstance(value, dict):
+                    result[name] = NamespaceProxy(value)
+                else:
+                    result[name] = value
 
         return result
 
