@@ -11,6 +11,17 @@ import pytest
 from monic.expressions import ExpressionsParser, ExpressionsInterpreter
 
 
+def _has_module(module_name: str) -> bool:
+    code = f"""
+    {module_name}.is_available()
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    return interpreter.execute(tree)
+
+
+@pytest.mark.skipif(not _has_module("json"), reason="JSON is not available")
 def test_json_runtime():
     code = """
 # Test json.dumps
@@ -28,6 +39,7 @@ parsed_obj = json.loads(json_str)
     assert interpreter.local_env["parsed_obj"] == {"a": 1, "b": [2, 3]}
 
 
+@pytest.mark.skipif(not _has_module("time"), reason="Time is not available")
 def test_time_runtime():
     code = """
 # Test time.time() and time.monotonic()
@@ -43,6 +55,9 @@ monotonic_time = time.monotonic()
     assert isinstance(interpreter.local_env["monotonic_time"], float)
 
 
+@pytest.mark.skipif(
+    not _has_module("datetime"), reason="Datetime is not available"
+)
 def test_datetime_runtime():
     code = """
 # Test datetime module binding
@@ -58,16 +73,6 @@ current_datetime = datetime.datetime.now()
     assert isinstance(
         interpreter.local_env["current_datetime"], datetime.datetime
     )
-
-
-def _has_module(module_name: str) -> bool:
-    code = f"""
-    {module_name}.is_available()
-    """
-    parser = ExpressionsParser()
-    interpreter = ExpressionsInterpreter()
-    tree = parser.parse(code)
-    return interpreter.execute(tree)
 
 
 @pytest.mark.skipif(not _has_module("np"), reason="Numpy is not available")
