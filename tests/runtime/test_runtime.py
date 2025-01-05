@@ -35,8 +35,8 @@ parsed_obj = json.loads(json_str)
     tree = parser.parse(code)
     interpreter.execute(tree)
 
-    assert interpreter.local_env["json_str"] == '{"a": 1, "b": [2, 3]}'
-    assert interpreter.local_env["parsed_obj"] == {"a": 1, "b": [2, 3]}
+    assert interpreter.get_name_value("json_str") == '{"a": 1, "b": [2, 3]}'
+    assert interpreter.get_name_value("parsed_obj") == {"a": 1, "b": [2, 3]}
 
 
 @pytest.mark.skipif(not _has_module("time"), reason="Time is not available")
@@ -51,8 +51,8 @@ monotonic_time = time.monotonic()
     tree = parser.parse(code)
     interpreter.execute(tree)
 
-    assert isinstance(interpreter.local_env["current_time"], float)
-    assert isinstance(interpreter.local_env["monotonic_time"], float)
+    assert isinstance(interpreter.get_name_value("current_time"), float)
+    assert isinstance(interpreter.get_name_value("monotonic_time"), float)
 
 
 @pytest.mark.skipif(
@@ -69,9 +69,9 @@ current_datetime = datetime.datetime.now()
     tree = parser.parse(code)
     interpreter.execute(tree)
 
-    assert isinstance(interpreter.local_env["current_date"], datetime.date)
+    assert isinstance(interpreter.get_name_value("current_date"), datetime.date)
     assert isinstance(
-        interpreter.local_env["current_datetime"], datetime.datetime
+        interpreter.get_name_value("current_datetime"), datetime.datetime
     )
 
 
@@ -86,8 +86,8 @@ def test_numpy_runtime():
     tree = parser.parse(code)
     interpreter.execute(tree)
 
-    assert isinstance(interpreter.local_env["arr"], object)
-    assert isinstance(interpreter.local_env["mean_val"], (int, float))
+    assert isinstance(interpreter.get_name_value("arr"), object)
+    assert isinstance(interpreter.get_name_value("mean_val"), (int, float))
 
 
 @pytest.mark.skipif(not _has_module("pd"), reason="Pandas is not available")
@@ -101,8 +101,8 @@ def test_pandas_runtime():
     tree = parser.parse(code)
     interpreter.execute(tree)
 
-    assert isinstance(interpreter.local_env["df"], object)
-    assert isinstance(interpreter.local_env["mean_val"], (int, float))
+    assert isinstance(interpreter.get_name_value("df"), object)
+    assert isinstance(interpreter.get_name_value("mean_val"), (int, float))
 
 
 @pytest.mark.skipif(not _has_module("pl"), reason="Polars is not available")
@@ -116,5 +116,5 @@ def test_polars_runtime():
     tree = parser.parse(code)
     interpreter.execute(tree)
 
-    assert isinstance(interpreter.local_env["df"], object)
-    assert isinstance(interpreter.local_env["mean_val"], (int, float))
+    assert isinstance(interpreter.get_name_value("df"), object)
+    assert isinstance(interpreter.get_name_value("mean_val"), (int, float))
