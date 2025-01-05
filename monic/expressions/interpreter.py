@@ -304,7 +304,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         except TimeoutError as e:
             raise e
         except Exception as e:
-            raise type(e)(str(e)) from e
+            raise e
 
     def get_name_value(self, name: str) -> t.Any:
         """Get the value of a name in the current scope."""
