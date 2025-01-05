@@ -1175,6 +1175,10 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             while True:
                 test_result = self.visit(node.test)  # Evaluate test first
                 if not test_result:
+                    # Loop completed normally, execute else block if present
+                    if node.orelse and not self.control.break_flag:
+                        for stmt in node.orelse:
+                            self.visit(stmt)
                     break
 
                 try:
