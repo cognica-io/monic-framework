@@ -918,3 +918,166 @@ letter_ages = {(name[0], age) for d in data
         {"alice": 26, "charlie": 36},
         [("A", 25), ("B", 30)],
     ]
+
+
+def test_scope_edge_cases():
+    """Test edge cases in scope handling."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test complex scope interactions
+    code = """
+def make_functions():
+    funcs = []
+    for i in range(3):
+        def make_func(x):
+            return x + i
+        funcs.append(make_func)
+    return funcs
+
+f0, f1, f2 = make_functions()
+results = []
+results.append(f0(10))
+results.append(f1(10))
+results.append(f2(10))
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [12, 12, 12]
+
+    # Test nonlocal declaration errors
+    code = """
+def outer():
+    try:
+        def inner():
+            nonlocal x  # Error: no binding for nonlocal 'x' found
+            x = 1
+        return inner()
+    except SyntaxError as e:
+        return str(e)
+
+result = outer()
+result
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert "no binding for nonlocal 'x' found" in result
+
+
+def test_binary_operation_edge_cases():
+    """Test edge cases in binary operations."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test division by zero
+    code = """
+try:
+    result = 1 / 0
+except ZeroDivisionError as e:
+    error = str(e)
+error
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == "division by zero"
+
+    # Test floor division by zero
+    code = """
+try:
+    result = 1 // 0
+except ZeroDivisionError as e:
+    error = str(e)
+error
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == "integer division or modulo by zero"
+
+    # Test power operation with invalid operands
+    code = """
+try:
+    result = "2" ** 3
+except TypeError as e:
+    error = str(e)
+error
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert "unsupported operand type(s) for **" in result
+
+
+def test_attribute_access_advanced():
+    """Test advanced cases of attribute access."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test attribute access with property
+    code = """
+class Temperature:
+    def __init__(self, celsius):
+        self._celsius = celsius
+
+    @property
+    def fahrenheit(self):
+        return self._celsius * 9/5 + 32
+
+    @fahrenheit.setter
+    def fahrenheit(self, value):
+        self._celsius = (value - 32) * 5/9
+
+temp = Temperature(25)
+results = []
+results.append(temp.fahrenheit)
+temp.fahrenheit = 77
+results.append(temp._celsius)
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [77.0, 25.0]
+
+    # Test attribute access with descriptors
+    code = """
+class Validator:
+    def __init__(self, minvalue=None, maxvalue=None):
+        self.minvalue = minvalue
+        self.maxvalue = maxvalue
+        self.name = None
+
+    def __get__(self, obj, objtype):
+        return obj.__dict__[self.name]
+
+    def __set__(self, obj, value):
+        if self.minvalue is not None and value < self.minvalue:
+            raise ValueError(f"Value must be >= {self.minvalue}")
+        if self.maxvalue is not None and value > self.maxvalue:
+            raise ValueError(f"Value must be <= {self.maxvalue}")
+        obj.__dict__[self.name] = value
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+class Score:
+    score = Validator(0, 100)
+
+results = []
+s = Score()
+s.score = 85
+results.append(s.score)
+
+try:
+    s.score = -1
+except ValueError as e:
+    results.append(str(e))
+
+try:
+    s.score = 101
+except ValueError as e:
+    results.append(str(e))
+
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [85, "Value must be >= 0", "Value must be <= 100"]
