@@ -13,6 +13,7 @@
 
 import ast
 import operator
+import sys
 import time
 import types
 import typing as t
@@ -148,6 +149,7 @@ class ControlFlow:
     loop_depth: int = 0
     break_flag: bool = False
     continue_flag: bool = False
+    current_exception: BaseException | None = None
 
 
 # Type variable for comprehension result types
@@ -903,6 +905,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             self.visit(stmt)
                         if handler.name is not None:
                             del self.local_env[handler.name]
+                        # Clear the current exception
+                        self.control.current_exception = None
                         break
 
                 if not handled:
@@ -949,7 +953,16 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         - If node.cause is specified, we set that as the __cause__.
         """
         if node.exc is None:
-            raise RuntimeError("No active exception to re-raise")
+            if self.control.current_exception:
+                raise self.control.current_exception
+            else:
+                exc_type, exc_value, _ = sys.exc_info()
+                if exc_value is not None:
+                    raise exc_value
+                elif exc_type is not None:
+                    raise exc_type()
+                else:
+                    raise RuntimeError("No active exception to re-raise")
 
         # Evaluate the main 'exc'
         # Could be a class like ValueError, or an instance like ValueError()
@@ -960,6 +973,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         # If exc_obj is already an exception instance
         if isinstance(exc_obj, BaseException):
+            # Set the current exception to be raised later
+            self.control.current_exception = exc_obj
             if cause_obj is not None:
                 if not isinstance(cause_obj, BaseException):
                     raise TypeError(
@@ -969,19 +984,24 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 # Raise existing exception instance with cause
                 raise exc_obj from cause_obj
             else:
+                # Raise an exception instance
                 raise exc_obj
 
         # If exc_obj is a class (like ValueError) rather than an instance
         if isinstance(exc_obj, type) and issubclass(exc_obj, BaseException):
             new_exc = exc_obj()  # Instantiate
+            # Set the current exception to be raised later
+            self.control.current_exception = new_exc
             if cause_obj is not None:
                 if not isinstance(cause_obj, BaseException):
                     raise TypeError(
                         "Expected an exception instance for 'from' cause, "
                         f"got {type(cause_obj).__name__}"
                     )
+                # Raise the new exception with cause
                 raise new_exc from cause_obj
             else:
+                # Raise the new exception
                 raise new_exc
 
         # Otherwise it's not a valid exception type or instance
