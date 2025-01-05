@@ -1331,6 +1331,32 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         Raises:
             TypeError: If argument binding fails
         """
+        # Check for too many positional arguments first
+        if len(call_args) > len(positional_params) and not vararg:
+            if len(defaults) > 0:
+                min_args = len(positional_params) - len(defaults)
+                max_args = len(positional_params)
+                raise TypeError(
+                    f"{func_name}() takes from {min_args} to {max_args} "
+                    f"positional arguments but {len(call_args)} were given"
+                )
+            else:
+                raise TypeError(
+                    f"{func_name}() takes {len(positional_params)} positional "
+                    f"arguments but {len(call_args)} were given"
+                )
+
+        # Check for unexpected keyword arguments
+        if not kwarg:
+            valid_kwargs = {param.arg for param in positional_params}
+            valid_kwargs.update(param.arg for param in kwonly_params)
+            for kw in call_kwargs:
+                if kw not in valid_kwargs:
+                    raise TypeError(
+                        f"{func_name}() got an unexpected keyword argument "
+                        f"'{kw}'"
+                    )
+
         # 1) Bind positional
         bound_args_count = min(len(call_args), len(positional_params))
         for i in range(bound_args_count):
@@ -1351,8 +1377,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     )
                 else:
                     raise TypeError(
-                        f"{func_name}() missing required positional argument: "
-                        f"'{param_name}'"
+                        f"{func_name}() missing 1 required positional "
+                        f"argument: '{param_name}'"
                     )
             else:
                 # This param has a default
@@ -1377,7 +1403,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     self._set_name_value(pname, kw_defaults[i])
                 else:
                     raise TypeError(
-                        f"missing required keyword-only argument '{pname}'"
+                        f"{func_name}() missing 1 required keyword-only "
+                        f"argument: '{pname}'"
                     )
 
         # 3) Handle *args
@@ -1385,13 +1412,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             vararg_name = vararg.arg
             leftover = call_args[len(positional_params) :]
             self._set_name_value(vararg_name, leftover)
-        else:
-            # If no vararg, but user gave extra positional => error
-            if len(call_args) > len(positional_params):
-                raise TypeError(
-                    f"{func_name}() takes {len(positional_params)} positional "
-                    f"arguments but {len(call_args)} were given"
-                )
 
         # 4) Handle **kwargs
         if kwarg:
