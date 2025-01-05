@@ -2604,16 +2604,18 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         return custom_super
 
-    def _create_class_namespace(self, node: ast.ClassDef) -> dict[str, t.Any]:
+    def _create_class_namespace(
+        self, node: ast.ClassDef, namespace: dict[str, t.Any]
+    ) -> dict[str, t.Any]:
         """Create and populate the class namespace.
 
         Args:
             node: ClassDef AST node
+            namespace: Class namespace
 
         Returns:
             The populated class namespace
         """
-        namespace: dict[str, t.Any] = {}
 
         # Save current environment
         prev_env = self.local_env
@@ -2640,8 +2642,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             # Evaluate base classes
             bases = tuple(self.visit(base) for base in node.bases)
 
-            # Create and populate the class namespace
-            namespace = self._create_class_namespace(node)
+            namespace: dict[str, t.Any] = {}
 
             # Add custom super to the class namespace (will be updated after
             # class creation)
@@ -2649,6 +2650,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
             # Set the module name for the class
             namespace["__module__"] = "monic.expressions.__namespace__"
+
+            # Create and populate the class namespace
+            namespace = self._create_class_namespace(node, namespace)
 
             # Create the class object
             class_obj = types.new_class(
