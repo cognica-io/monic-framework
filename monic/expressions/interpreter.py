@@ -1427,8 +1427,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                             break
                     if not found:
                         raise SyntaxError(
-                            f"No binding for nonlocal '{name}' found "
-                            "in outer scopes"
+                            f"no binding for nonlocal '{name}' found"
                         )
                     # Mark this name as nonlocal in the current scope
                     scope.nonlocals.add(name)
