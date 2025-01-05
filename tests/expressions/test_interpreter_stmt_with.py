@@ -67,7 +67,7 @@ result = inner  # Should raise NameError
         with pytest.raises(NameError):
             interpreter.execute(tree)
 
-        assert "outer" in interpreter.local_env
+        assert "outer" in interpreter.global_env
         assert "inner" not in interpreter.local_env
 
     def test_with_statement_global_access(self, parser, interpreter):
@@ -82,7 +82,6 @@ result = inner  # Should raise NameError
         interpreter.global_env["cm"] = cm
 
         code = """
-global x
 x = 'global'
 with cm:
     global x
@@ -230,8 +229,8 @@ after = 'visible'
         tree = parser.parse(code)
         interpreter.execute(tree)
 
-        assert "before" in interpreter.local_env
-        assert "after" in interpreter.local_env
+        assert "before" in interpreter.global_env
+        assert "after" in interpreter.global_env
         assert "during" not in interpreter.local_env
         assert interpreter.get_name_value("before") == "modified"
 

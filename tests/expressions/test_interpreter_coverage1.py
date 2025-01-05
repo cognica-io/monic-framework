@@ -608,7 +608,9 @@ x
 """
     # 'x' is declared global but never defined in global_env => NameError
     tree = parser.parse(code)
-    with pytest.raises(NameError, match="Global name 'x' is not defined"):
+    with pytest.raises(
+        SyntaxError, match="global declaration not allowed at module level"
+    ):
         interpreter.execute(tree)
 
 
@@ -1307,6 +1309,39 @@ outer()
     tree = parser.parse(code)
     with pytest.raises(SyntaxError, match="name 'x' is nonlocal and global"):
         interpreter.execute(tree)
+
+    # Test global declaration in nested function
+    code = """
+x = 1
+def outer():
+    x = 2
+    def inner():
+        global x
+        return x
+    return inner()
+
+result = outer()
+"""
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+    assert interpreter.get_name_value("result") == 1
+
+    # Test global declaration
+    code = """
+x = 1
+def foo():
+    global x
+    x = 2
+    return x
+
+result1 = x
+foo()
+result2 = x
+"""
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+    assert interpreter.get_name_value("result1") == 1
+    assert interpreter.get_name_value("result2") == 2
 
 
 def test_visit_nonlocal():

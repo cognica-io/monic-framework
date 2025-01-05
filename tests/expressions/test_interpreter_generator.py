@@ -33,14 +33,10 @@ def subgen():
     return 'done'
 
 def gen():
-    print("script: GEN")
     output = yield from subgen()
-    print("script: OUTPUT", output)
     yield output
 
-print(gen)
 result = list(gen())
-print(result)
 """
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -111,7 +107,6 @@ def make_gen():
     return gen
 
 g = make_gen()
-print(g)
 result1 = list(g())
 result2 = list(g())
 """
