@@ -165,14 +165,17 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         Args:
             context: Optional context for execution
         """
-        self.started_at = time.monotonic()
+        self.started_at: float = time.monotonic()
 
         self.context = context or ExpressionsContext()
         self.scope_stack: list[Scope] = [Scope()]  # Track scopes
         self.control: ControlFlow = ControlFlow()
 
         # Initialize with built-in environment
+        self.local_env: dict[str, t.Any] = {}
         self.global_env: dict[str, t.Any] = {
+            # Last result storage
+            "_": None,
             # Built-in functions
             "print": print,
             "len": len,
@@ -259,11 +262,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             }
         )
 
-        self.local_env: dict[str, t.Any] = {}
-
-        # Initialize last result storage
-        self.global_env["_"] = None
-
     @property
     def current_scope(self) -> Scope:
         return self.scope_stack[-1]
@@ -305,8 +303,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 return result
         except TimeoutError as e:
             raise e
-        except Exception as e:
-            raise e
 
     def get_name_value(self, name: str) -> t.Any:
         """Get the value of a name in the current scope."""
@@ -341,23 +337,23 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
     def _get_name_value(self, name: str) -> t.Any:
         """Get value of a name considering scope declarations."""
-        # Fast path for common case
-        if name in self.local_env:
-            return self.local_env[name]
-
         # Check current scope declarations
         current = self.current_scope
         if name in current.globals:
             if name in self.global_env:
                 return self.global_env[name]
-            raise NameError(f"Global name '{name}' is not defined")
+            raise NameError(f"Name '{name}' is not defined")
+
+        # Fast path for common case
+        if name in self.local_env:
+            return self.local_env[name]
 
         if name in current.nonlocals:
             # Use reversed list slice for faster iteration
             for scope in reversed(self.scope_stack[:-1]):
                 if name in scope.locals:
                     return self.local_env[name]
-            raise NameError(f"Nonlocal name '{name}' is not defined")
+            raise NameError(f"Name '{name}' is not defined")
 
         if name in self.global_env:
             return self.global_env[name]
@@ -371,6 +367,14 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Special case for '_'
         if name == "_":
             self.global_env["_"] = value
+            return
+
+        # If we're at the top level, declare it global
+        if len(self.scope_stack) == 1:
+            self.current_scope.globals.add(name)
+            self.global_env[name] = value
+            self.current_scope.locals.discard(name)
+            self.local_env.pop(name, None)
             return
 
         # If declared global in the current scope:
@@ -404,6 +408,15 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         if name == "_":
             raise SyntaxError("Cannot delete special variable '_'")
 
+        # If we're in a function scope and the name exists in global_env
+        # but wasn't declared global, it's an error
+        if (
+            len(self.scope_stack) > 1
+            and name in self.global_env
+            and name not in self.current_scope.globals
+        ):
+            raise NameError(f"Name '{name}' is not defined")
+
         if name in self.current_scope.globals:
             if name in self.global_env:
                 del self.global_env[name]
@@ -426,7 +439,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             if name in self.current_scope.locals:
                 del self.local_env[name]
                 self.current_scope.locals.remove(name)
-            elif name in self.global_env:
+            elif name in self.global_env and len(self.scope_stack) == 1:
+                # Only allow deleting from global_env at the module level
                 del self.global_env[name]
             else:
                 raise NameError(f"Name '{name}' is not defined")
@@ -879,46 +893,52 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         except TypeError as e:
             raise TypeError(f"Invalid comparison: {str(e)}") from e
 
-    def visit_Try(self, node: ast.Try) -> None:
-        """Handle try-except-else-finally statements.
+    def visit_Try(self, node: ast.Try) -> t.Any:
+        """Visit a try statement.
 
         Args:
-            node: Try AST node
+            node: The Try AST node
+
+        Returns:
+            The result of the try block or exception handler
         """
-        with ScopeContext(self):
-            try:
-                for stmt in node.body:
-                    self.visit(stmt)
-            except Exception as e:
-                handled = False
-                for handler in node.handlers:
-                    if handler.type is None:
-                        exc_class: t.Type[BaseException] = Exception
-                    else:
-                        exc_class = self._get_exception_class(handler.type)
+        result = None
 
-                    if isinstance(e, exc_class):
-                        handled = True
-                        if handler.name is not None:
-                            self.local_env[handler.name] = e
+        try:
+            for stmt in node.body:
+                result = self.visit(stmt)
+        except Exception as e:
+            # Try to find a matching handler
+            for handler in node.handlers:
+                if handler.type is None:
+                    exc_class: t.Type[BaseException] = Exception
+                else:
+                    exc_class = self._get_exception_class(handler.type)
+
+                if isinstance(e, exc_class):
+                    if handler.name:
+                        self._set_name_value(handler.name, e)
+                    try:
                         for stmt in handler.body:
-                            self.visit(stmt)
-                        if handler.name is not None:
-                            del self.local_env[handler.name]
-                        # Clear the current exception
-                        self.control.current_exception = None
-                        break
-
-                if not handled:
-                    raise e
+                            result = self.visit(stmt)
+                    finally:
+                        if handler.name:
+                            self._del_name_value(handler.name)
+                    break
             else:
-                if node.orelse:
-                    for stmt in node.orelse:
-                        self.visit(stmt)
-            finally:
-                if node.finalbody:
-                    for stmt in node.finalbody:
-                        self.visit(stmt)
+                raise
+        else:
+            # If no exception occurred, execute else block
+            if node.orelse:
+                for stmt in node.orelse:
+                    result = self.visit(stmt)
+        finally:
+            # Always execute finally block
+            if node.finalbody:
+                for stmt in node.finalbody:
+                    result = self.visit(stmt)
+
+        return result
 
     def _get_exception_class(self, node: ast.expr) -> t.Type[BaseException]:
         """Resolve the AST node to an actual exception class object."""
@@ -953,8 +973,13 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         - If node.cause is specified, we set that as the __cause__.
         """
         if node.exc is None:
+            # Re-raise the current exception
             if self.control.current_exception:
-                raise self.control.current_exception
+                exc = self.control.current_exception
+                # Clear the current exception before re-raising to avoid
+                # infinite recursion
+                self.control.current_exception = None
+                raise exc
             else:
                 exc_type, exc_value, _ = sys.exc_info()
                 if exc_value is not None:
@@ -984,6 +1009,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 # Raise existing exception instance with cause
                 raise exc_obj from cause_obj
             else:
+                # Clear the current exception before raising to avoid
+                # infinite recursion
+                self.control.current_exception = None
                 # Raise an exception instance
                 raise exc_obj
 
@@ -1001,6 +1029,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 # Raise the new exception with cause
                 raise new_exc from cause_obj
             else:
+                # Clear the current exception before raising to avoid
+                # infinite recursion
+                self.control.current_exception = None
                 # Raise the new exception
                 raise new_exc
 
@@ -1012,89 +1043,85 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
     def visit_With(self, node: ast.With) -> None:
         """
-        Execute a with statement, properly handling scopes and context managers.
+        Execute a with statement, properly handling context managers and scope.
         """
         # Create a new scope for the with block
         scope = Scope()
+        self.scope_stack.append(scope)
 
         # Save the current environment
         outer_env = self.local_env
+        # Create a new environment for the with block, inheriting from outer
+        self.local_env = outer_env.copy()
 
-        # Create a new environment for the with block
-        self.local_env = {}
-        # Copy only non-local variables from outer environment
-        for name, value in outer_env.items():
-            if name not in scope.locals:
-                self.local_env[name] = value
-
-        self.scope_stack.append(scope)
+        # List to track context managers and their values
+        context_managers = []
 
         try:
-            # List to track context managers and their values
-            context_managers = []
+            # Enter all context managers in order
+            for item in node.items:
+                try:
+                    # Evaluate the context manager expression
+                    context_manager = self.visit(item.context_expr)
+
+                    try:
+                        # Enter the context manager
+                        value = context_manager.__enter__()
+                        context_managers.append((context_manager, value))
+
+                        # Handle the optional 'as' variable if present
+                        if item.optional_vars is not None:
+                            name = self.visit(item.optional_vars)
+                            self._set_name_value(name, value)
+                            scope.locals.add(name)
+                    except Exception as enter_exc:
+                        # If __enter__ fails, properly clean up previous
+                        # context managers
+                        for mgr, _ in reversed(context_managers[:-1]):
+                            try:
+                                mgr.__exit__(None, None, None)
+                            except Exception:
+                                # Ignore any cleanup exceptions
+                                pass
+                        raise enter_exc
+                except Exception as ctx_exc:
+                    # Clean up any successfully entered context managers
+                    self._exit_context_managers(context_managers, ctx_exc)
+                    raise ctx_exc
 
             try:
-                # Enter all context managers in order
-                for item in node.items:
-                    try:
-                        # Evaluate the context manager expression using outer
-                        # environment
-                        prev_env = self.local_env
-                        self.local_env = outer_env
-                        try:
-                            context_manager = self.visit(item.context_expr)
-                        finally:
-                            self.local_env = prev_env
-
-                        try:
-                            # Enter the context manager
-                            value = context_manager.__enter__()
-                            context_managers.append((context_manager, value))
-
-                            # Handle the optional 'as' variable if present
-                            if item.optional_vars is not None:
-                                # Add the 'as' variable to the with block's
-                                # environment
-                                name = self.visit(item.optional_vars)
-                                self.local_env[name] = value
-                                scope.locals.add(name)
-                        except Exception as enter_exc:
-                            # If __enter__ fails, properly clean up previous
-                            # context managers
-                            for mgr, _ in reversed(context_managers[:-1]):
-                                try:
-                                    mgr.__exit__(None, None, None)
-                                except Exception:
-                                    # Ignore any cleanup exceptions
-                                    pass
-                            raise enter_exc
-                    except Exception as ctx_exc:
-                        # Clean up any successfully entered context managers
-                        self._exit_context_managers(context_managers, ctx_exc)
-                        raise ctx_exc
-
-                try:
-                    # Execute the body of the with statement
-                    for stmt in node.body:
-                        self.visit(stmt)
-                except Exception as body_exc:
-                    # Handle any exception from the body
-                    if not self._exit_context_managers(
-                        context_managers, body_exc
-                    ):
-                        raise body_exc
-                else:
-                    # No exception occurred, exit context managers normally
-                    self._exit_context_managers(context_managers, None)
-            finally:
-                # Update outer environment with modified variables
-                for name, value in self.local_env.items():
-                    if name in outer_env:  # Only update existing variables
-                        outer_env[name] = value
-
-                # Restore the outer environment
-                self.local_env = outer_env
+                # Execute the body of the with statement
+                for stmt in node.body:
+                    self.visit(stmt)
+            except Exception as body_exc:
+                # Handle any exception from the body
+                if not self._exit_context_managers(context_managers, body_exc):
+                    raise body_exc
+            else:
+                # No exception occurred, exit context managers normally
+                self._exit_context_managers(context_managers, None)
         finally:
+            # Update outer environment with modified variables
+            for name, value in self.local_env.items():
+                if name in outer_env:
+                    # Update existing variables
+                    outer_env[name] = value
+                elif name in self.current_scope.globals:
+                    # Update global variables
+                    self.global_env[name] = value
+                elif name in self.current_scope.nonlocals:
+                    # Handle nonlocal variables
+                    for scope in reversed(self.scope_stack[:-1]):
+                        if name in scope.locals:
+                            outer_env[name] = value
+                            break
+                elif len(self.scope_stack) == 2 and name in self.global_env:
+                    # At module level (scope stack has 2 scopes: module and
+                    # with), update module-level variables in global_env
+                    self.global_env[name] = value
+
+            # Restore the outer environment
+            self.local_env = outer_env
             # Pop the scope
             self.scope_stack.pop()
 
@@ -3097,11 +3124,24 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
     def visit_Global(self, node: ast.Global) -> None:
         """Handle global declarations."""
+        if len(self.scope_stack) < 2:
+            raise SyntaxError("global declaration not allowed at module level")
+
         for name in node.names:
             # Check if the name is already declared as nonlocal
             if name in self.current_scope.nonlocals:
                 raise SyntaxError(f"name '{name}' is nonlocal and global")
-            self.current_scope.globals.add(name)
+
+            # Mark this name as global in the current scope
+            if name in self.scope_stack[0].globals:
+                self.current_scope.globals.add(name)
+                self.current_scope.locals.discard(name)
+            elif name in self.scope_stack[0].locals:
+                self.current_scope.globals.add(name)
+                self.current_scope.locals.discard(name)
+            else:
+                raise SyntaxError(f"name '{name}' is not defined")
+
             # Remove from locals if present
             self.current_scope.locals.discard(name)
 
