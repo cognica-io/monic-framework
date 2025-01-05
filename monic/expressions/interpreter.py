@@ -393,7 +393,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     # Also update the value in the outer scope's locals
                     scope.locals.add(name)
                     return
-            raise NameError(f"Nonlocal name '{name}' not found in outer scopes")
+            raise NameError(f"no binding for nonlocal '{name}' found")
 
         # Otherwise, treat it as a local assignment
         self.current_scope.locals.add(name)
@@ -408,7 +408,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             if name in self.global_env:
                 del self.global_env[name]
             else:
-                raise NameError(f"Global name '{name}' is not defined")
+                raise NameError(f"no binding for global '{name}' found")
         elif name in self.current_scope.nonlocals:
             # Search for name in outer scopes
             found = False
@@ -420,7 +420,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                         scope.locals.remove(name)
                     break
             if not found:
-                raise NameError(f"Nonlocal name '{name}' is not defined")
+                raise NameError(f"no binding for nonlocal '{name}' found")
         else:
             # Try to delete from current scope
             if name in self.current_scope.locals:
@@ -1298,8 +1298,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                                 break
                         if not found:
                             raise SyntaxError(
-                                f"No binding for nonlocal '{name}' found "
-                                "in outer scopes"
+                                f"no binding for nonlocal '{name}' found"
                             )
 
     def _process_function_parameters(
@@ -1402,7 +1401,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             if call_kwargs:
                 first_unexpected = next(iter(call_kwargs))
                 raise TypeError(
-                    f"{func_name}() got an unexpected keyword argument: "
+                    f"{func_name}() got an unexpected keyword argument "
                     f"'{first_unexpected}'"
                 )
 
@@ -3123,9 +3122,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
             if not found:
                 # If it's not in any enclosing scope, Python raises SyntaxError
-                raise SyntaxError(
-                    f"No binding for nonlocal '{name}' found in outer scopes"
-                )
+                raise SyntaxError(f"no binding for nonlocal '{name}' found")
 
     def visit_Constant(self, node: ast.Constant) -> t.Any:
         """Visit a constant value node.
