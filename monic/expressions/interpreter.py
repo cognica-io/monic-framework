@@ -2642,7 +2642,13 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             # Evaluate base classes
             bases = tuple(self.visit(base) for base in node.bases)
 
-            namespace: dict[str, t.Any] = {}
+            # Create the class namespace
+            if saved_env is not None:
+                namespace: dict[str, t.Any] = {
+                    **saved_env,
+                }
+            else:
+                namespace = {}
 
             # Add custom super to the class namespace (will be updated after
             # class creation)
@@ -2664,9 +2670,6 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
             # Register the class in the current scope
             self._set_name_value(node.name, class_obj)
-
-            # Also register the class in the global environment
-            self.global_env[node.name] = class_obj
 
             # Also register the class in the outer scope if we're in a method
             # or if we have a saved environment
