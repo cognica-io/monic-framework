@@ -862,6 +862,49 @@ async def foo():
         foo()
 
 
+def test_visit_classdef():
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test class with super() in method
+    code = """
+class Base:
+    def greet(self):
+        return "Hello"
+
+class Derived(Base):
+    def greet(self):
+        return super().greet() + " World"
+
+obj = Derived()
+result = obj.greet()
+"""
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+    assert interpreter.get_name_value("result") == "Hello World"
+
+    # Test class with multiple inheritance
+    code = """
+class A:
+    def foo(self):
+        return "A"
+
+class B:
+    def foo(self):
+        return "B"
+
+class C(A, B):
+    def foo(self):
+        return super().foo()
+
+obj = C()
+result = obj.foo()
+"""
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+    assert interpreter.get_name_value("result") == "A"
+
+
 def test_visit_try():
     parser = ExpressionsParser()
     interpreter = ExpressionsInterpreter()
@@ -1225,6 +1268,27 @@ for x, y in points:
     tree = parser.parse(code)
     interpreter.execute(tree)
     assert interpreter.get_name_value("result") == [3, 7, 11]
+
+
+def test_visit_global():
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test global declaration with nonlocal conflict
+    code = """
+def outer():
+    x = 1
+    def inner():
+        nonlocal x
+        global x
+        x = 2
+    inner()
+
+outer()
+"""
+    tree = parser.parse(code)
+    with pytest.raises(SyntaxError, match="name 'x' is nonlocal and global"):
+        interpreter.execute(tree)
 
 
 def test_visit_nonlocal():
