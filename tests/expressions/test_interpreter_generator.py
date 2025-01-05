@@ -22,7 +22,7 @@ result = list(gen())
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result"] == [1, 2, 3]
+    assert interpreter.get_name_value("result") == [1, 2, 3]
 
 
 def test_generator_yield_from():
@@ -46,7 +46,7 @@ print(result)
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result"] == ["a", "b", "done"]
+    assert interpreter.get_name_value("result") == ["a", "b", "done"]
 
 
 def test_generator_yield_from_list():
@@ -61,7 +61,7 @@ result = list(gen())
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result"] == [1, 2, 3, "a", "b", "c"]
+    assert interpreter.get_name_value("result") == [1, 2, 3, "a", "b", "c"]
 
 
 def test_generator_yield_from_error():
@@ -96,7 +96,7 @@ result = list(caller())
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result"] == [1, 2, "end"]
+    assert interpreter.get_name_value("result") == [1, 2, "end"]
 
 
 def test_generator_with_closure():
@@ -119,5 +119,5 @@ result2 = list(g())
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result1"] == [1, 2]
-    assert interpreter.local_env["result2"] == [2, 3]
+    assert interpreter.get_name_value("result1") == [1, 2]
+    assert interpreter.get_name_value("result2") == [2, 3]

@@ -559,7 +559,7 @@ for i in range(3):
     result.append(f"end {i}")
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         (0, 0),
         (0, 1),
         (0, 2),
@@ -587,7 +587,7 @@ def outer(x):
 result = [outer(i) for i in range(-1, 3)]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "negative",
         0,
         6,
@@ -607,7 +607,7 @@ while i * i < 20:
     i += 1
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         (0, 0),
         (0, 1),
         (0, 2),
@@ -638,7 +638,7 @@ for i in range(5):
         result.append(f"finally {i}")
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "process 0",
         "finally 0",
         "process 1",
@@ -681,7 +681,7 @@ result = [
 ]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [11, 15, 12, 13]
+    assert interpreter.get_name_value("result") == [11, 15, 12, 13]
 
     # Test keyword-only arguments
     code = """
@@ -696,7 +696,7 @@ result = [
 ]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "test-normal-False",
         "test-fast-False",
         "test-normal-True",
@@ -725,7 +725,7 @@ def complex_return(x):
 result = [complex_return(i) for i in range(-1, 5)]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         None,
         [],
         "error",
@@ -768,9 +768,9 @@ result2 = x
 result3 = y
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == (1, 5)
-    assert interpreter.local_env["result2"] == 1
-    assert interpreter.local_env["result3"] == 2
+    assert interpreter.get_name_value("result1") == (1, 5)
+    assert interpreter.get_name_value("result2") == 1
+    assert interpreter.get_name_value("result3") == 2
 
     # Test scope in comprehensions
     code = """
@@ -786,10 +786,10 @@ result3 = result1  # Reuse result1 since it's the same values
 result4 = z  # This will definitely be modified
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == [0, 1, 2]
-    assert interpreter.local_env["result2"] == 0
-    assert interpreter.local_env["result3"] == [0, 1, 2]
-    assert interpreter.local_env["result4"] == 2
+    assert interpreter.get_name_value("result1") == [0, 1, 2]
+    assert interpreter.get_name_value("result2") == 0
+    assert interpreter.get_name_value("result3") == [0, 1, 2]
+    assert interpreter.get_name_value("result4") == 2
 
     # Test scope in exception handling
     code = """
@@ -809,7 +809,7 @@ def test_exc():
 result = test_exc()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == 3
+    assert interpreter.get_name_value("result") == 3
 
     # Test scope in with statements
     code = """
@@ -836,7 +836,7 @@ with ctx as c1:
 result.append(ctx.value)
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [1, 2, 3, 4]
+    assert interpreter.get_name_value("result") == [1, 2, 3, 4]
 
 
 def test_class_edge_cases():
@@ -878,10 +878,10 @@ result_c = C().method()
 """
     interpreter.execute(parser.parse(code))
     assert (
-        interpreter.local_env["result"] == "ACBD"
+        interpreter.get_name_value("result") == "ACBD"
     )  # This matches Python's MRO
-    assert interpreter.local_env["result_b"] == "AB"  # B -> A
-    assert interpreter.local_env["result_c"] == "AC"  # C -> A
+    assert interpreter.get_name_value("result_b") == "AB"  # B -> A
+    assert interpreter.get_name_value("result_c") == "AC"  # C -> A
 
     # Test super with multiple inheritance
     code = """
@@ -903,7 +903,7 @@ class Combined(Base1, Base2):
 result = Combined().greet()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == "Hello-Hi"
+    assert interpreter.get_name_value("result") == "Hello-Hi"
 
 
 def test_scope_context_edge_cases():
@@ -936,11 +936,11 @@ result1, result2, result3 = outer()
 result4, result5 = x, y
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == (5, 4)
-    assert interpreter.local_env["result2"] == 5
-    assert interpreter.local_env["result3"] == 4
-    assert interpreter.local_env["result4"] == 1
-    assert interpreter.local_env["result5"] == 2
+    assert interpreter.get_name_value("result1") == (5, 4)
+    assert interpreter.get_name_value("result2") == 5
+    assert interpreter.get_name_value("result3") == 4
+    assert interpreter.get_name_value("result4") == 1
+    assert interpreter.get_name_value("result5") == 2
 
     # Test scope in comprehensions
     code = """
@@ -956,10 +956,10 @@ result3 = result1  # Reuse result1 since it's the same values
 result4 = z  # This will definitely be modified
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == [0, 1, 2]
-    assert interpreter.local_env["result2"] == 0
-    assert interpreter.local_env["result3"] == [0, 1, 2]
-    assert interpreter.local_env["result4"] == 2
+    assert interpreter.get_name_value("result1") == [0, 1, 2]
+    assert interpreter.get_name_value("result2") == 0
+    assert interpreter.get_name_value("result3") == [0, 1, 2]
+    assert interpreter.get_name_value("result4") == 2
 
     # Test scope in exception handling
     code = """
@@ -978,14 +978,14 @@ def test_func():
 result = test_func()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == (
+    assert interpreter.get_name_value("result") == (
         1,
         2,
         3,
     )  # Values set in the function
     # Remove assertions for undefined variables
-    # assert interpreter.local_env["final_x"] == 1
-    # assert interpreter.local_env["final_y"] == 2
+    # assert interpreter.get_name_value("final_x") == 1
+    # assert interpreter.get_name_value("final_y") == 2
 
 
 def test_security_check_edge_cases():
@@ -1091,9 +1091,9 @@ result2 = _  # Should be None from none()
 result3 = _  # Should be 8
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == 5
-    assert interpreter.local_env["result2"] is None
-    assert interpreter.local_env["result3"] == 8
+    assert interpreter.get_name_value("result1") == 5
+    assert interpreter.get_name_value("result2") is None
+    assert interpreter.get_name_value("result3") == 8
 
     # Test exception handling
     code = """
@@ -1103,7 +1103,7 @@ except ZeroDivisionError as e:
     result = str(e)
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == "division by zero"
+    assert interpreter.get_name_value("result") == "division by zero"
 
 
 def test_security_checks_comprehensive():
@@ -1263,7 +1263,7 @@ def test_with():
 result = test_with()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == ["enter", "1,2", "exit"]
+    assert interpreter.get_name_value("result") == ["enter", "1,2", "exit"]
 
     # Test nested with statements
     code = """
@@ -1295,7 +1295,7 @@ def test_nested_with():
 result = test_nested_with()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "enter outer",
         "enter inner",
         "enter outer",
@@ -1331,7 +1331,7 @@ def test_with_exception():
 result = test_with_exception()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "enter",
         "before error",
         "exit: ValueError",
@@ -1357,7 +1357,7 @@ def test_with_nonlocal():
 result = test_with_nonlocal()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == (2, 2)
+    assert interpreter.get_name_value("result") == (2, 2)
 
 
 def test_complex_pattern_matching():
@@ -1389,9 +1389,9 @@ result2 = match_nested({"outer": {"inner": -1}})
 result3 = match_nested({"other": "value"})
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == "positive: 42"
-    assert interpreter.local_env["result2"] == "non-positive: -1"
-    assert interpreter.local_env["result3"] == "no match"
+    assert interpreter.get_name_value("result1") == "positive: 42"
+    assert interpreter.get_name_value("result2") == "non-positive: -1"
+    assert interpreter.get_name_value("result3") == "no match"
 
     # Test complex class patterns with inheritance
     code = """
@@ -1433,7 +1433,7 @@ shapes = [
 result = [classify_shape(s) for s in shapes]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "small circle",
         "large circle",
         "square",
@@ -1477,7 +1477,7 @@ lines = [
 result = [classify_line(l) for l in lines]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "point",
         "vertical",
         "horizontal",
@@ -1539,7 +1539,7 @@ test_data = [
 result = [analyze_data(d) for d in test_data]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "same point",
         "same x",
         "same y",
@@ -1571,7 +1571,7 @@ multipliers = make_multipliers()
 result = [m(2) for m in multipliers]
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [0, 2, 4, 6, 8]
+    assert interpreter.get_name_value("result") == [0, 2, 4, 6, 8]
 
     # Test generator expression with scope
     code = """
@@ -1585,7 +1585,7 @@ def make_generator():
 result = make_generator()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [3, 4, 5]
+    assert interpreter.get_name_value("result") == [3, 4, 5]
 
     # Test nested comprehension with scope
     code = """
@@ -1599,7 +1599,7 @@ def make_matrix():
 result = make_matrix()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [[3, 4], [4, 5]]
+    assert interpreter.get_name_value("result") == [[3, 4], [4, 5]]
 
     # Test comprehension with nonlocal variables
     code = """
@@ -1614,7 +1614,7 @@ def outer():
 result = outer()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == ([0, 1, 3], 3)
+    assert interpreter.get_name_value("result") == ([0, 1, 3], 3)
 
 
 def test_scope_context_with_saved_env():
@@ -1647,11 +1647,11 @@ result1, result2, result3 = outer()
 result4, result5 = x, y
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == (5, 4)
-    assert interpreter.local_env["result2"] == 5
-    assert interpreter.local_env["result3"] == 4
-    assert interpreter.local_env["result4"] == 1
-    assert interpreter.local_env["result5"] == 2
+    assert interpreter.get_name_value("result1") == (5, 4)
+    assert interpreter.get_name_value("result2") == 5
+    assert interpreter.get_name_value("result3") == 4
+    assert interpreter.get_name_value("result4") == 1
+    assert interpreter.get_name_value("result5") == 2
 
     # Test variable inheritance and updates
     code = """
@@ -1674,7 +1674,7 @@ def level1():
 result = level1()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == (((1, 4, 5), 4, 5), 4)
+    assert interpreter.get_name_value("result") == (((1, 4, 5), 4, 5), 4)
 
     # Test exception handling with environment restoration
     code = """
@@ -1700,9 +1700,9 @@ final_x = x
 final_y = y
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == (5, 4)
-    assert interpreter.local_env["final_x"] == 1
-    assert interpreter.local_env["final_y"] == 2
+    assert interpreter.get_name_value("result") == (5, 4)
+    assert interpreter.get_name_value("final_x") == 1
+    assert interpreter.get_name_value("final_y") == 2
 
 
 def test_complex_exception_handling():
@@ -1753,7 +1753,7 @@ result3 = nested_exceptions(2)
 result4 = nested_exceptions(3)
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == [
+    assert interpreter.get_name_value("result1") == [
         "outer try",
         "inner try",
         "after inner raise",
@@ -1761,7 +1761,7 @@ result4 = nested_exceptions(3)
         "after inner",
         "outer finally",
     ]
-    assert interpreter.local_env["result2"] == [
+    assert interpreter.get_name_value("result2") == [
         "outer try",
         "inner try",
         "inner except: positive",
@@ -1770,7 +1770,7 @@ result4 = nested_exceptions(3)
         "after inner",
         "outer finally",
     ]
-    assert interpreter.local_env["result3"] == [
+    assert interpreter.get_name_value("result3") == [
         "outer try",
         "inner try",
         "inner except: positive",
@@ -1779,7 +1779,7 @@ result4 = nested_exceptions(3)
         "caused by: positive",
         "outer finally",
     ]
-    assert interpreter.local_env["result4"] == [
+    assert interpreter.get_name_value("result4") == [
         "outer try",
         "inner try",
         "inner except: positive",
@@ -1824,13 +1824,13 @@ result3 = validate(1000)
 result4 = validate(50)
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result1"] == ["try", "input: not a number"]
-    assert interpreter.local_env["result2"] == [
+    assert interpreter.get_name_value("result1") == ["try", "input: not a number"]
+    assert interpreter.get_name_value("result2") == [
         "try",
         "validation: negative number",
     ]
-    assert interpreter.local_env["result3"] == ["try", "app: too large"]
-    assert interpreter.local_env["result4"] == ["try", "valid"]
+    assert interpreter.get_name_value("result3") == ["try", "app: too large"]
+    assert interpreter.get_name_value("result4") == ["try", "valid"]
 
 
 def test_complex_context_managers():
@@ -1895,7 +1895,7 @@ def test_contexts():
 result = test_contexts()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "enter outer",
         "enter inner1",
         "caught: inner2 enter error",
@@ -1939,7 +1939,7 @@ def test_state_tracking():
 result = test_state_tracking()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "enter depth 1",
         "enter depth 1",
         "enter depth 2",
@@ -1995,7 +1995,7 @@ def test_multiple_contexts():
 result = test_multiple_contexts()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [
+    assert interpreter.get_name_value("result") == [
         "acquire r1",
         "acquire r2",
         "acquire r3",

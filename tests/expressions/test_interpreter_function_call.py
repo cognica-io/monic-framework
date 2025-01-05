@@ -286,7 +286,7 @@ async def simple_async():
 result = await simple_async()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == 42
+    assert interpreter.get_name_value("result") == 42
 
     # Test await expression
     code = """
@@ -300,7 +300,7 @@ async def use_value():
 result = await use_value()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == 84
+    assert interpreter.get_name_value("result") == 84
 
     # Test multiple awaits
     code = """
@@ -316,7 +316,7 @@ async def sum_numbers():
 result = await sum_numbers()
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == 60
+    assert interpreter.get_name_value("result") == 60
 
     # Test async function with return value
     code = """
@@ -333,4 +333,4 @@ async def get_number(n):
 result = await process_data([1, 2, 3])
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.local_env["result"] == [2, 4, 6]
+    assert interpreter.get_name_value("result") == [2, 4, 6]

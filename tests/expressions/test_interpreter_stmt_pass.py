@@ -114,5 +114,5 @@ pass
     interpreter.execute(multiple_pass_code)
 
     # Verify that variable assignments still work
-    assert interpreter.local_env.get("x") == 5
-    assert interpreter.local_env.get("y") == 6
+    assert interpreter.get_name_value("x") == 5
+    assert interpreter.get_name_value("y") == 6

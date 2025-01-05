@@ -319,7 +319,7 @@ def test_invalid_mapping():
 result = test_invalid_mapping()
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == "no match"
+        assert interpreter.get_name_value("result") == "no match"
 
         # Test invalid class pattern with non-class instance
         code = """
@@ -339,7 +339,7 @@ def test_invalid_class():
 result = test_invalid_class()
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == "no match"
+        assert interpreter.get_name_value("result") == "no match"
 
         # Test invalid sequence pattern with wrong length
         code = """
@@ -354,7 +354,7 @@ def test_invalid_sequence():
 result = test_invalid_sequence()
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == "no match"
+        assert interpreter.get_name_value("result") == "no match"
 
         # Test invalid value pattern
         code = """
@@ -369,7 +369,7 @@ def test_invalid_value():
 result = test_invalid_value()
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == "no match"
+        assert interpreter.get_name_value("result") == "no match"
 
     def test_match_pattern_binding(self):
         """Test pattern binding in match statements.
@@ -390,7 +390,7 @@ match [1, 2, 3, 4]:
         result = (first, rest, last)
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == (1, [2, 3], 4)
+        assert interpreter.get_name_value("result") == (1, [2, 3], 4)
 
         # Test mapping pattern binding
         code = """
@@ -399,7 +399,7 @@ match {"a": 1, "b": 2, "c": 3}:
         result = (x, rest)
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == (1, {"b": 2, "c": 3})
+        assert interpreter.get_name_value("result") == (1, {"b": 2, "c": 3})
 
         # Test class pattern binding
         code = """
@@ -414,7 +414,7 @@ match p:
         result = (x, y)
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == (1, 2)
+        assert interpreter.get_name_value("result") == (1, 2)
 
         # Test binding with guards
         code = """
@@ -425,7 +425,7 @@ match [1, 2, 3]:
         result = "not ascending"
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == "ascending"
+        assert interpreter.get_name_value("result") == "ascending"
 
     def test_match_pattern_or(self):
         """Test OR patterns in match statements.
@@ -453,7 +453,7 @@ def classify(x):
 result = [classify(i) for i in range(7)]
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == [
+        assert interpreter.get_name_value("result") == [
             "small",
             "small",
             "small",
@@ -483,7 +483,7 @@ result = [
 ]
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == [
+        assert interpreter.get_name_value("result") == [
             "single: 1",
             "single: 2",
             "pair: 1, 2",
@@ -511,7 +511,7 @@ result = [
 ]
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == [
+        assert interpreter.get_name_value("result") == [
             "ascending",
             "not ascending",
             "ascending",
@@ -539,7 +539,7 @@ result = [
 ]
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == [
+        assert interpreter.get_name_value("result") == [
             "pattern 1",
             "pattern 1",
             "pattern 2",
@@ -566,7 +566,7 @@ match 42:
         result = (x, value)
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == (42, 42)
+        assert interpreter.get_name_value("result") == (42, 42)
 
         # Test AS patterns with sequence unpacking
         code = """
@@ -575,7 +575,7 @@ match [1, 2, 3]:
         result = (first, rest, full)
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == (1, [2, 3], [1, 2, 3])
+        assert interpreter.get_name_value("result") == (1, [2, 3], [1, 2, 3])
 
         # Test AS patterns with mapping
         code = """
@@ -584,7 +584,7 @@ match {"x": 1, "y": 2}:
         result = (x, y, point)
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == (1, 2, {"x": 1, "y": 2})
+        assert interpreter.get_name_value("result") == (1, 2, {"x": 1, "y": 2})
 
         # Test AS patterns with class patterns
         code = """
@@ -599,4 +599,4 @@ match p:
         result = (x, y, point is p)
 """
         interpreter.execute(parser.parse(code))
-        assert interpreter.local_env["result"] == (1, 2, True)
+        assert interpreter.get_name_value("result") == (1, 2, True)

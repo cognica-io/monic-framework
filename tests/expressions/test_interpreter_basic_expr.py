@@ -178,28 +178,28 @@ def test_list_unpacking():
     # Standard unpacking
     tree = parser.parse("a, b = [1, 2]")
     interpreter.execute(tree)
-    assert interpreter.local_env["a"] == 1
-    assert interpreter.local_env["b"] == 2
+    assert interpreter.get_name_value("a") == 1
+    assert interpreter.get_name_value("b") == 2
 
     # Starred unpacking
     tree = parser.parse("a, *rest = [1, 2, 3, 4]")
     interpreter.execute(tree)
-    assert interpreter.local_env["a"] == 1
-    assert interpreter.local_env["rest"] == [2, 3, 4]
+    assert interpreter.get_name_value("a") == 1
+    assert interpreter.get_name_value("rest") == [2, 3, 4]
 
     # Starred unpacking with multiple variables
     tree = parser.parse("first, *middle, last = [1, 2, 3, 4, 5]")
     interpreter.execute(tree)
-    assert interpreter.local_env["first"] == 1
-    assert interpreter.local_env["middle"] == [2, 3, 4]
-    assert interpreter.local_env["last"] == 5
+    assert interpreter.get_name_value("first") == 1
+    assert interpreter.get_name_value("middle") == [2, 3, 4]
+    assert interpreter.get_name_value("last") == 5
 
     # Starred unpacking with empty middle
     tree = parser.parse("first, *middle, last = [1, 2]")
     interpreter.execute(tree)
-    assert interpreter.local_env["first"] == 1
-    assert interpreter.local_env["middle"] == []
-    assert interpreter.local_env["last"] == 2
+    assert interpreter.get_name_value("first") == 1
+    assert interpreter.get_name_value("middle") == []
+    assert interpreter.get_name_value("last") == 2
 
 
 def test_error_handling():
@@ -236,12 +236,12 @@ def test_augmented_assignments():
     # Simple augmented assignment
     tree = parser.parse("x = 5; x += 3")
     interpreter.execute(tree)
-    assert interpreter.local_env["x"] == 8
+    assert interpreter.get_name_value("x") == 8
 
     # Augmented assignment with list
     tree = parser.parse("lst = [1, 2, 3]; lst[1] += 10")
     interpreter.execute(tree)
-    assert interpreter.local_env["lst"] == [1, 12, 3]
+    assert interpreter.get_name_value("lst") == [1, 12, 3]
 
 
 def test_f_string_formatting():

@@ -33,7 +33,7 @@ result = outer()
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result"] == 3
+    assert interpreter.get_name_value("result") == 3
 
 
 def test_global_nonlocal_handling():
@@ -58,7 +58,7 @@ result = outer()
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result"] == 4
+    assert interpreter.get_name_value("result") == 4
     assert interpreter.global_env["global_var"] == 2
 
 
@@ -98,24 +98,24 @@ except TypeError as e:
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["a"] == 1
-    assert interpreter.local_env["b"] == 2
-    assert interpreter.local_env["first"] == 1
-    assert interpreter.local_env["rest"] == [2, 3, 4]
-    assert interpreter.local_env["last"] == 5
-    assert interpreter.local_env["x"] == 1
-    assert interpreter.local_env["y"] == 2
-    assert interpreter.local_env["z"] == 3
-    assert interpreter.local_env["w"] == [4, 5]
+    assert interpreter.get_name_value("a") == 1
+    assert interpreter.get_name_value("b") == 2
+    assert interpreter.get_name_value("first") == 1
+    assert interpreter.get_name_value("rest") == [2, 3, 4]
+    assert interpreter.get_name_value("last") == 5
+    assert interpreter.get_name_value("x") == 1
+    assert interpreter.get_name_value("y") == 2
+    assert interpreter.get_name_value("z") == 3
+    assert interpreter.get_name_value("w") == [4, 5]
     assert (
-        interpreter.local_env["i"]
-        == interpreter.local_env["j"]
-        == interpreter.local_env["k"]
+        interpreter.get_name_value("i")
+        == interpreter.get_name_value("j")
+        == interpreter.get_name_value("k")
         == 0
     )
-    assert "not enough values to unpack" in interpreter.local_env["error1"]
-    assert "too many values to unpack" in interpreter.local_env["error2"]
-    assert "cannot unpack non-iterable" in interpreter.local_env["error3"]
+    assert "not enough values to unpack" in interpreter.get_name_value("error1")
+    assert "too many values to unpack" in interpreter.get_name_value("error2")
+    assert "cannot unpack non-iterable" in interpreter.get_name_value("error3")
 
 
 def test_comprehension_handling():
@@ -142,12 +142,17 @@ result6 = [y for x in range(3) if (y := x * 2) > 2]
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result1"] == [(0, 0), (0, 1), (1, 0), (1, 1)]
-    assert interpreter.local_env["result2"] == {0, 2, 4}
-    assert interpreter.local_env["result3"] == {"0": 0, "1": 1, "2": 4}
-    assert interpreter.local_env["result4"] == [[0, 1], [1, 2]]
-    assert interpreter.local_env["result5"] == [0, 2, 4]
-    assert interpreter.local_env["result6"] == [4]
+    assert interpreter.get_name_value("result1") == [
+        (0, 0),
+        (0, 1),
+        (1, 0),
+        (1, 1),
+    ]
+    assert interpreter.get_name_value("result2") == {0, 2, 4}
+    assert interpreter.get_name_value("result3") == {"0": 0, "1": 1, "2": 4}
+    assert interpreter.get_name_value("result4") == [[0, 1], [1, 2]]
+    assert interpreter.get_name_value("result5") == [0, 2, 4]
+    assert interpreter.get_name_value("result6") == [4]
 
 
 def test_class_definition():
@@ -195,11 +200,11 @@ except AttributeError as e:
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result1"] == "static"
-    assert interpreter.local_env["result2"] == "class"
-    assert interpreter.local_env["result3"] == 2
-    assert interpreter.local_env["result4"] == "Derived(2)"
-    assert "has no attribute" in interpreter.local_env["error1"]
+    assert interpreter.get_name_value("result1") == "static"
+    assert interpreter.get_name_value("result2") == "class"
+    assert interpreter.get_name_value("result3") == 2
+    assert interpreter.get_name_value("result4") == "Derived(2)"
+    assert "has no attribute" in interpreter.get_name_value("error1")
 
 
 def test_pattern_matching():
@@ -250,17 +255,17 @@ match Point(1, 2):
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result1"] == "one"
-    assert interpreter.local_env["result2"] == "list: 2, 3"
-    assert interpreter.local_env["result3"] == "dict: value"
-    assert interpreter.local_env["result4"] == "string: test"
+    assert interpreter.get_name_value("result1") == "one"
+    assert interpreter.get_name_value("result2") == "list: 2, 3"
+    assert interpreter.get_name_value("result3") == "dict: value"
+    assert interpreter.get_name_value("result4") == "string: test"
     assert (
-        interpreter.local_env["result5"] == "list: 3, 2"
+        interpreter.get_name_value("result5") == "list: 3, 2"
     )  # Changed expectation
-    assert interpreter.local_env["result6"] == "default"
-    assert interpreter.local_env["result7"] == (1, [2, 3], 4)
-    assert interpreter.local_env["result8"] == (1, {"b": 2, "c": 3})
-    assert interpreter.local_env["result9"] == (1, 2)
+    assert interpreter.get_name_value("result6") == "default"
+    assert interpreter.get_name_value("result7") == (1, [2, 3], 4)
+    assert interpreter.get_name_value("result8") == (1, {"b": 2, "c": 3})
+    assert interpreter.get_name_value("result9") == (1, 2)
 
 
 def test_error_handling():
@@ -307,13 +312,13 @@ except TypeError as e:
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["error_message"] == "test error"
-    assert interpreter.local_env["cleanup1"] == "done"
-    assert interpreter.local_env["error2"] == "inner error"
-    assert interpreter.local_env["cleanup2"] == "done"
-    assert interpreter.local_env["result"] == 84
-    assert interpreter.local_env["cleanup3"] == "done"
-    assert interpreter.local_env["error4"] == "new error"
+    assert interpreter.get_name_value("error_message") == "test error"
+    assert interpreter.get_name_value("cleanup1") == "done"
+    assert interpreter.get_name_value("error2") == "inner error"
+    assert interpreter.get_name_value("cleanup2") == "done"
+    assert interpreter.get_name_value("result") == 84
+    assert interpreter.get_name_value("cleanup3") == "done"
+    assert interpreter.get_name_value("error4") == "new error"
 
 
 def test_function_method_handling():
@@ -366,21 +371,22 @@ except TypeError as e:
     interpreter = ExpressionsInterpreter()
     tree = parser.parse(code)
     interpreter.execute(tree)
-    assert interpreter.local_env["result1"] == "instance method"
-    assert interpreter.local_env["result2"] == "static method"
-    assert interpreter.local_env["result3"] == "class method"
-    assert interpreter.local_env["result4"] == "called with (1, 2), {'x': 3}"
+    assert interpreter.get_name_value("result1") == "instance method"
+    assert interpreter.get_name_value("result2") == "static method"
+    assert interpreter.get_name_value("result3") == "class method"
     assert (
-        interpreter.local_env["result5"]
+        interpreter.get_name_value("result4") == "called with (1, 2), {'x': 3}"
+    )
+    assert (
+        interpreter.get_name_value("result5")
         == "a=1, b=3, args=(4, 5), c=6, kwargs={'d': 7}"
     )
-    assert "has no attribute" in interpreter.local_env["error1"]
-    assert (
-        "missing required positional argument"
-        in interpreter.local_env["error2"]
+    assert "has no attribute" in interpreter.get_name_value("error1")
+    assert "missing required positional argument" in interpreter.get_name_value(
+        "error2"
     )
-    assert (
-        "got an unexpected keyword argument" in interpreter.local_env["error3"]
+    assert "got an unexpected keyword argument" in interpreter.get_name_value(
+        "error3"
     )
 
 

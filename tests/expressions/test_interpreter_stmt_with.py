@@ -117,7 +117,7 @@ result = outer()
         tree = parser.parse(code)
         interpreter.execute(tree)
 
-        assert interpreter.local_env["result"] == "modified"
+        assert interpreter.get_name_value("result") == "modified"
 
     def test_nested_with_statements_scope(self, parser, interpreter):
         """Test scope handling in nested with statements.
@@ -233,7 +233,7 @@ after = 'visible'
         assert "before" in interpreter.local_env
         assert "after" in interpreter.local_env
         assert "during" not in interpreter.local_env
-        assert interpreter.local_env["before"] == "modified"
+        assert interpreter.get_name_value("before") == "modified"
 
     def test_with_statement_nested_function_scope(self, parser, interpreter):
         """Test interaction between with statements and function scopes.
@@ -259,4 +259,4 @@ result = outer()
         tree = parser.parse(code)
         interpreter.execute(tree)
 
-        assert interpreter.local_env["result"] == "function"
+        assert interpreter.get_name_value("result") == "function"
