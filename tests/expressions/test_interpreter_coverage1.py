@@ -904,6 +904,24 @@ result = obj.foo()
     interpreter.execute(tree)
     assert interpreter.get_name_value("result") == "A"
 
+    # Test class with super() in class level
+    code = """
+class Base:
+    x = 1
+
+class Derived(Base):
+    y = super().x + 1
+"""
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"super\(\): no arguments and no context - unable to determine "
+            r"class and instance"
+        ),
+    ):
+        tree = parser.parse(code)
+        interpreter.execute(tree)
+
 
 def test_visit_try():
     parser = ExpressionsParser()
