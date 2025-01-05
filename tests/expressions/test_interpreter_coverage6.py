@@ -1824,7 +1824,10 @@ result3 = validate(1000)
 result4 = validate(50)
 """
     interpreter.execute(parser.parse(code))
-    assert interpreter.get_name_value("result1") == ["try", "input: not a number"]
+    assert interpreter.get_name_value("result1") == [
+        "try",
+        "input: not a number",
+    ]
     assert interpreter.get_name_value("result2") == [
         "try",
         "validation: negative number",
