@@ -1378,8 +1378,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     self._set_name_value(pname, kw_defaults[i])
                 else:
                     raise TypeError(
-                        f"{func_name}() missing required keyword-only "
-                        f"argument: '{pname}'"
+                        f"missing required keyword-only argument '{pname}'"
                     )
 
         # 3) Handle *args
@@ -1965,11 +1964,19 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 for k, v in dict_val.items():
                     if not isinstance(k, str):
                         raise TypeError("Keywords must be strings")
+                    if k in kwargs:
+                        raise TypeError(
+                            f"got multiple values for keyword argument '{k}'"
+                        )
                     kwargs[k] = v
             else:
                 # Normal keyword argument f(key=value)
                 key_name = kw.arg
                 value = self.visit(kw.value)
+                if key_name in kwargs:
+                    raise TypeError(
+                        f"got multiple values for keyword argument '{key_name}'"
+                    )
                 kwargs[key_name] = value
 
         return pos_args, kwargs
