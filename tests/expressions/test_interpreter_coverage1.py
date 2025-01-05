@@ -590,7 +590,7 @@ def outer():
 outer()
 """
     tree = parser.parse(code)
-    with pytest.raises(SyntaxError, match="No binding for nonlocal 'x'"):
+    with pytest.raises(SyntaxError, match="no binding for nonlocal 'x'"):
         interpreter.execute(tree)
 
 
@@ -625,7 +625,7 @@ def func():
     nonlocal y
 """
     tree = parser.parse(code)
-    with pytest.raises(SyntaxError, match="No binding for nonlocal 'y'"):
+    with pytest.raises(SyntaxError, match="no binding for nonlocal 'y'"):
         interpreter.execute(tree)
 
 
@@ -1369,9 +1369,7 @@ def outer():
 outer()
 """
     tree = parser.parse(code)
-    with pytest.raises(
-        SyntaxError, match="No binding for nonlocal 'x' found in outer scopes"
-    ):
+    with pytest.raises(SyntaxError, match="no binding for nonlocal 'x' found"):
         interpreter.execute(tree)
 
     # Test nonlocal declaration in nested functions

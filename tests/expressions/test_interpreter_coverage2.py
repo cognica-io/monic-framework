@@ -676,7 +676,7 @@ results
         (1, 1, (), 3, 2, {}),
         (1, 2, (3, 4), 5, 6, {"x": 7}),
         (1, 2, (), 3, 4, {"x": 5, "y": 6}),
-        "missing required keyword-only argument 'c'",
+        "complex_func() missing 1 required keyword-only argument: 'c'",
     ]
 
     # Test function with nonlocal and closure
@@ -1081,3 +1081,295 @@ results
     tree = parser.parse(code)
     result = interpreter.execute(tree)
     assert result == [85, "Value must be >= 0", "Value must be <= 100"]
+
+
+def test_function_call_edge_cases():
+    """Test edge cases in function calls."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test function call with invalid arguments
+    code = """
+def func(a, b, *, c):
+    return a + b + c
+
+results = []
+try:
+    func(1, 2, 3)  # Positional argument after keyword-only argument
+except TypeError as e:
+    results.append(str(e))
+
+try:
+    func(1, b=2)  # Missing required keyword-only argument
+except TypeError as e:
+    results.append(str(e))
+
+try:
+    func(1, 2, d=3)  # Unknown keyword argument
+except TypeError as e:
+    results.append(str(e))
+
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [
+        "func() takes 2 positional arguments but 3 were given",
+        "func() missing 1 required keyword-only argument: 'c'",
+        "func() got an unexpected keyword argument 'd'",
+    ]
+
+    # Test method call with invalid arguments
+    code = """
+class Test:
+    def method(self, a, b=2):
+        return a + b
+
+    @classmethod
+    def class_method(cls, x):
+        return x * 2
+
+    @staticmethod
+    def static_method(y):
+        return y + 1
+
+obj = Test()
+results = []
+
+# Test instance method
+results.append(obj.method(1))
+results.append(obj.method(1, 3))
+
+# Test classmethod
+results.append(Test.class_method(5))
+results.append(obj.class_method(5))
+
+# Test staticmethod
+results.append(Test.static_method(10))
+results.append(obj.static_method(10))
+
+try:
+    obj.method()  # Missing required argument
+except TypeError as e:
+    results.append(str(e))
+
+try:
+    obj.method(1, 2, 3)  # Too many arguments
+except TypeError as e:
+    results.append(str(e))
+
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [
+        3,
+        4,
+        10,
+        10,
+        11,
+        11,
+        "method() missing 1 required positional argument: 'a'",
+        "method() takes from 2 to 3 positional arguments but 4 were given",
+    ]
+
+
+def test_generator_advanced_features():
+    """Test advanced generator features."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test generator with try/finally
+    code = """
+def gen():
+    yield 1
+    yield 2
+
+results = []
+g = gen()
+results.append(next(g))
+results.append(next(g))
+try:
+    next(g)
+except StopIteration:
+    results.append('stopped')
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [1, 2, "stopped"]
+
+    # Test generator with throw
+    code = """
+def gen_with_throw():
+    yield 1
+    yield 2
+    yield 3
+    yield 'end'
+
+results = []
+g = gen_with_throw()
+results.append(next(g))
+results.append(next(g))
+try:
+    g.throw(ValueError)
+except ValueError:
+    results.append('caught')
+except StopIteration:
+    results.append('stopped')
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [1, 2, "caught"]
+
+
+def test_comprehension_advanced_features():
+    """Test advanced comprehension features."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test nested comprehensions with complex conditions
+    code = """
+def get_data():
+    return [[j for j in range(i + 1)] for i in range(3)]
+
+results = []
+# List comprehension
+results.append([sum(row) for row in get_data()])
+
+# Set comprehension with tuple unpacking
+points = [(1, 2), (3, 4), (1, 2), (5, 6)]
+results.append({(y, x) for x, y in points})
+
+# Dict comprehension with complex key generation
+words = ['hello', 'world', 'python']
+results.append({word: {c: word.count(c) for c in set(word)}
+               for word in words if len(word) > 4})
+
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [
+        [0, 1, 3],  # Sum of each row
+        {(2, 1), (4, 3), (6, 5)},  # Swapped coordinates
+        {
+            "hello": {"h": 1, "o": 1, "e": 1, "l": 2},
+            "world": {"o": 1, "l": 1, "r": 1, "d": 1, "w": 1},
+            "python": {"o": 1, "t": 1, "p": 1, "y": 1, "n": 1, "h": 1},
+        },
+    ]
+
+    # Test comprehension with error handling
+    code = """
+def problematic_data():
+    yield 1
+    yield 'not a number'
+    yield 3
+
+results = []
+try:
+    results.append([x * 2 for x in problematic_data()])
+except TypeError as e:
+    results.append(str(e))
+
+# Generator expression with error
+def gen_expr():
+    return (x * 2 for x in problematic_data())
+
+g = gen_expr()
+results.append(next(g))
+try:
+    next(g)
+except TypeError as e:
+    results.append(str(e))
+
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [[2, "not a numbernot a number", 6], 2]
+
+
+def test_match_pattern_advanced():
+    """Test advanced pattern matching features."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test match with custom class patterns
+    code = """
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+    __match_args__ = ('x', 'y')
+
+class Line:
+    def __init__(self, start, end):
+        self.start = start
+        self.end = end
+    __match_args__ = ('start', 'end')
+
+def classify(shape):
+    match shape:
+        case Point(0, y):
+            return f"Point on y-axis at y={y}"
+        case Point(x, 0):
+            return f"Point on x-axis at x={x}"
+        case Point(x, y) if x == y:
+            return f"Point on diagonal at {x}"
+        case Line(Point(x1, y1), Point(x2, y2)) if x1 == x2:
+            return f"Vertical line at x={x1}"
+        case Line(Point(x1, y1), Point(x2, y2)) if y1 == y2:
+            return f"Horizontal line at y={y1}"
+        case _:
+            return "Other shape"
+
+results = []
+results.append(classify(Point(0, 5)))
+results.append(classify(Point(3, 0)))
+results.append(classify(Point(4, 4)))
+results.append(classify(Line(Point(2, 1), Point(2, 5))))
+results.append(classify(Line(Point(1, 3), Point(5, 3))))
+results.append(classify(Line(Point(1, 1), Point(2, 2))))
+results
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == [
+        "Point on y-axis at y=5",
+        "Point on x-axis at x=3",
+        "Point on diagonal at 4",
+        "Vertical line at x=2",
+        "Horizontal line at y=3",
+        "Other shape",
+    ]
+
+
+def test_async_function_advanced():
+    """Test advanced async function features."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test async function with error handling
+    code = """
+async def the_answer():
+    return 42
+
+async def async_with_error():
+    try:
+        await the_answer()
+        raise ValueError('test error')
+    except ValueError as e:
+        return str(e)
+
+async def run_async():
+    return await async_with_error()
+
+result = await run_async()
+result
+"""
+    tree = parser.parse(code)
+    result = interpreter.execute(tree)
+    assert result == "test error"

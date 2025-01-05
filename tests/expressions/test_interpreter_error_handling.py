@@ -80,7 +80,7 @@ def test_function_call_errors():
 
     # Test missing required positional argument
     with pytest.raises(
-        TypeError, match="missing required positional argument: 'x'"
+        TypeError, match=r"f\(\) missing 1 required positional argument: 'x'"
     ):
         interpreter.execute(
             parser.parse(
@@ -94,7 +94,7 @@ result = f()
 
     # Test unexpected keyword argument
     with pytest.raises(
-        TypeError, match="got an unexpected keyword argument: 'x'"
+        TypeError, match=r"f\(\) got an unexpected keyword argument 'x'"
     ):
         interpreter.execute(
             parser.parse(
@@ -193,7 +193,7 @@ def test_function_call_edge_cases():
 
     # Test missing required argument
     with pytest.raises(
-        TypeError, match="missing required positional argument: 'x'"
+        TypeError, match=r"f\(\) missing 1 required positional argument: 'x'"
     ):
         interpreter.execute(
             parser.parse(
@@ -207,7 +207,7 @@ f()
 
     # Test unexpected keyword argument
     with pytest.raises(
-        TypeError, match="got an unexpected keyword argument: 'x'"
+        TypeError, match=r"f\(\) got an unexpected keyword argument 'x'"
     ):
         interpreter.execute(
             parser.parse(

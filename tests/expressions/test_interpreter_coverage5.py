@@ -382,8 +382,9 @@ except TypeError as e:
         == "a=1, b=3, args=(4, 5), c=6, kwargs={'d': 7}"
     )
     assert "has no attribute" in interpreter.get_name_value("error1")
-    assert "missing required positional argument" in interpreter.get_name_value(
-        "error2"
+    assert (
+        "missing 1 required positional argument"
+        in interpreter.get_name_value("error2")
     )
     assert "got an unexpected keyword argument" in interpreter.get_name_value(
         "error3"

@@ -821,9 +821,7 @@ def test_nonlocal_declaration_errors():
     with pytest.raises(SyntaxError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert "No binding for nonlocal 'x' found in outer scopes" in str(
-        exc_info.value
-    )
+    assert "no binding for nonlocal 'x' found" in str(exc_info.value)
 
     # Test nonlocal declaration at module level
     code = """
@@ -926,7 +924,7 @@ def test_function_call_errors():
 
     error1 = interpreter.get_name_value("error1")
     error2 = interpreter.get_name_value("error2")
-    assert "missing required positional argument" in error1
+    assert "missing 1 required positional argument" in error1
     assert "takes 2 positional arguments but 3 were given" in error2
 
 
@@ -1015,7 +1013,7 @@ def test_name_lookup_errors():
     with pytest.raises(SyntaxError) as exc_info:
         interpreter.execute(parser.parse(code))
 
-    assert "No binding for nonlocal 'x' found" in str(exc_info.value)
+    assert "no binding for nonlocal 'x' found" in str(exc_info.value)
 
 
 def test_name_deletion_complex():
