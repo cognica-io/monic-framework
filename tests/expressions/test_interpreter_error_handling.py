@@ -457,3 +457,51 @@ def test_operator_error_handling():
 """
             )
         )
+
+
+def test_raise_error_handling():
+    """Test raise error handling.
+
+    Tests:
+    1. Raising an exception
+    2. Re-raising an exception
+    3. Raising an exception with a cause
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test raising an exception
+    with pytest.raises(ValueError):
+        interpreter.execute(
+            parser.parse(
+                """
+raise ValueError("test error")
+"""
+            )
+        )
+
+    # Test re-raising an exception
+    with pytest.raises(ValueError):
+        interpreter.execute(
+            parser.parse(
+                """
+try:
+    raise ValueError("test error")
+except ValueError:
+    raise
+"""
+            )
+        )
+
+    # Test raising an exception with a cause
+    with pytest.raises(ValueError):
+        interpreter.execute(
+            parser.parse(
+                """
+try:
+    raise ValueError("test error")
+except ValueError as e:
+    raise ValueError("test error") from e
+"""
+            )
+        )
