@@ -1,6 +1,10 @@
 # Monic Framework
 
-[![codecov](https://codecov.io/gh/cognica-io/monic-framework/graph/badge.svg?token=MJ7RJ1ZU1D)](https://codecov.io/gh/cognica-io/monic-framework)
+![Codecov](https://img.shields.io/codecov/c/github/cognica-io/monic-framework)
+![PyPI - Version](https://img.shields.io/pypi/v/monic-framework)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/monic-framework)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/monic-framework)
+![PyPI - License](https://img.shields.io/pypi/l/monic-framework)
 
 Monic Framework is a powerful expression evaluation and code execution framework that provides a safe and flexible way to parse and interpret Python-style code. It offers a robust expression parser and interpreter designed for dynamic code evaluation, scripting, and embedded programming scenarios.
 
