@@ -118,3 +118,48 @@ def test_polars_runtime():
 
     assert isinstance(interpreter.get_name_value("df"), object)
     assert isinstance(interpreter.get_name_value("mean_val"), (int, float))
+
+
+@pytest.mark.skipif(not _has_module("pa"), reason="Arrow is not available")
+def test_arrow_runtime():
+    code = """
+    table = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+
+    assert isinstance(interpreter.get_name_value("table"), object)
+
+
+@pytest.mark.skipif(
+    not _has_module("pc"), reason="Arrow Compute is not available"
+)
+def test_arrow_compute_runtime():
+    code = """
+    table = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
+    mean_val = pc.mean(table["a"]).as_py()
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+
+    assert isinstance(interpreter.get_name_value("table"), object)
+    assert isinstance(interpreter.get_name_value("mean_val"), (int, float))
+
+
+@pytest.mark.skipif(
+    not _has_module("pq"), reason="Arrow Parquet is not available"
+)
+def test_arrow_parquet_runtime():
+    code = """
+    result = pq.is_available()
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+
+    assert isinstance(interpreter.get_name_value("result"), bool)
