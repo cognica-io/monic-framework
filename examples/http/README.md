@@ -42,7 +42,7 @@ curl "http://localhost:8000/compute?input=say_hello(\"Monic\")&timeout=5.0"
   }
   ```
 
-Example:
+Examples:
 
 ```bash
 curl -X POST http://localhost:8000/compute \
