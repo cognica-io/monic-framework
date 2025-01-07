@@ -79,16 +79,16 @@ Monic Framework is a powerful expression evaluation and code execution framework
 
 ## Installation
 
-Basic installation:
+### Basic Installation
 
 ```bash
-pip install -r requirements.txt
+pip install -U monic-framework
 ```
 
-For development and testing:
+### Development Installation
 
 ```bash
-pip install -r requirements-tests.txt
+pip install -e .[dev]
 ```
 
 ## Quick Start
