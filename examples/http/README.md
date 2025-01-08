@@ -62,13 +62,27 @@ The response is a JSON object with a `result` field.
 
 ```json
 {
-  "result": 42
+  "success": true,
+  "error": null,
+  "pods": [
+    {
+      "type": "int",
+      "content": 42
+    }
+  ]
 }
 ```
 
 ```json
 {
-  "result": "Hello, Monic!"
+  "success": true,
+  "error": null,
+  "pods": [
+    {
+      "type": "str",
+      "content": "Hello, Monic!"
+    }
+  ]
 }
 ```
 
