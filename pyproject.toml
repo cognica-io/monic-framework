@@ -4,14 +4,7 @@ version = "0.1.2"
 description = "Monic Framework"
 authors = [{ name = "Cognica, Inc.", email = "support@cognica.io" }]
 requires-python = ">=3.10"
-dependencies = [
-    "fastapi[standard]>=0.115.6",
-    "sqlmodel>=0.0.22",
-    "pyarrow",
-    "numpy",
-    "pandas",
-    "polars",
-]
+dependencies = []
 readme = "README.md"
 license = { file = "LICENSE" }
 classifiers = [
@@ -35,6 +28,7 @@ Repository = "https://github.com/cognica-io/monic-framework"
 Issues = "https://github.com/cognica-io/monic-framework/issues"
 
 [project.optional-dependencies]
+extra = ["pyarrow", "numpy", "pandas", "polars"]
 dev = ["coverage>=7.6.10", "pytest>=8.3.4", "pytest-cov>=6.0.0"]
 
 [build-system]
