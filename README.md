@@ -85,10 +85,22 @@ Monic Framework is a powerful expression evaluation and code execution framework
 pip install -U monic-framework
 ```
 
+Or with extra dependencies such as `pyarrow`, `numpy`, `pandas`, and `polars`:
+
+```bash
+pip install -U monic-framework[extra]
+```
+
 ### Development Installation
 
 ```bash
 pip install -e .[dev]
+```
+
+Or with extra dependencies such as `pyarrow`, `numpy`, `pandas`, and `polars`:
+
+```bash
+pip install -e .[dev,extra]
 ```
 
 ## Quick Start
@@ -103,7 +115,7 @@ from monic.expressions import ExpressionsParser, ExpressionsInterpreter
 parser = ExpressionsParser()
 interpreter = ExpressionsInterpreter()
 
-# Execute simple expressions
+# Define code to execute
 code = """
 # Variable assignment
 x = 10
@@ -119,6 +131,7 @@ else:
 result
 """
 
+# Parse code and execute it
 tree = parser.parse(code)
 result = interpreter.execute(tree)
 print(result)  # Output: "y is greater"
@@ -130,11 +143,16 @@ print(result)  # Output: "y is greater"
 from monic.expressions import ExpressionsParser, ExpressionsInterpreter
 
 
+# Initialize parser and interpreter
+parser = ExpressionsParser()
+interpreter = ExpressionsInterpreter()
+
+# Define code to execute
 code = """
-def calculate_sum(a, b):
+def calculate_sum(a: int, b: int) -> int:
     return a + b
 
-def calculate_average(numbers):
+def calculate_average(numbers: list[int]) -> float:
     total = 0
     for num in numbers:
         total += num
@@ -147,6 +165,50 @@ avg_result = calculate_average([1, 2, 3, 4, 5])
 [sum_result, avg_result]
 """
 
+# Parse code and execute it
+tree = parser.parse(code)
+result = interpreter.execute(tree)
+print(result)  # Output: [30, 3.0]
+```
+
+### Binding Python Objects
+
+```python
+from monic.expressions import (
+    ExpressionsParser,
+    ExpressionsInterpreter,
+    monic_bind,
+)
+
+
+# Define functions and bind them to the interpreter
+@monic_bind
+def calculate_sum(x: int, y: int) -> int:
+    return x + y
+
+
+@monic_bind
+def calculate_average(numbers: list[int]) -> float:
+    total = 0
+    for num in numbers:
+        total += num
+    return total / len(numbers)
+
+
+# Initialize parser and interpreter
+parser = ExpressionsParser()
+interpreter = ExpressionsInterpreter()
+
+# Define code to execute
+code = """
+# Using bound functions
+sum_result = calculate_sum(10, 20)
+avg_result = calculate_average([1, 2, 3, 4, 5])
+
+[sum_result, avg_result]
+"""
+
+# Parse code and execute it
 tree = parser.parse(code)
 result = interpreter.execute(tree)
 print(result)  # Output: [30, 3.0]
@@ -158,9 +220,11 @@ print(result)  # Output: [30, 3.0]
 from monic.expressions import ExpressionsParser, ExpressionsContext, ExpressionsInterpreter
 
 
+# Initialize parser
 parser = ExpressionsParser()
 # Initialize with timeout context
 context = ExpressionsContext(timeout=5.0)  # Set 5 seconds timeout
+# Initialize interpreter with context
 interpreter = ExpressionsInterpreter(context=context)
 
 # This will be terminated after 5 seconds
