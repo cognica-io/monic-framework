@@ -1,5 +1,11 @@
 # Compute API Example
 
+## Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
 ## Running the API
 
 ```bash
@@ -58,7 +64,7 @@ curl -X POST http://localhost:8000/compute \
 
 ### Response
 
-The response is a JSON object with a `result` field.
+The response is a JSON object with `success`, `error`, and `pods` fields.
 
 ```json
 {
