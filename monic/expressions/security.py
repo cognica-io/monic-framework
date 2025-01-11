@@ -46,6 +46,7 @@ class SecurityChecker(ast.NodeVisitor):
         "__subclasses__",
         "__mro__",
         "__qualname__",
+        "__traceback__",
     }
 
     def check_attribute_security(self, attr_name: str) -> None:
