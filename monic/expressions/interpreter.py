@@ -213,6 +213,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             "anext": anext,
             "type": type,
             "object": object,
+            "super": super,
             # Built-in types
             "bool": bool,
             "int": int,
