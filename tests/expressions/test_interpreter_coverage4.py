@@ -179,7 +179,7 @@ def test_registry_non_function_objects():
         pass  # pragma: no cover
 
     obj = TestClass()
-    registry.bind("test.obj")(obj)
+    registry.bind("test.obj")(lambda: obj)
     assert registry.is_bound(obj) is True
 
     # Test is_bound with non-function object
@@ -187,7 +187,7 @@ def test_registry_non_function_objects():
         pass  # pragma: no cover
 
     obj = NonCallable()
-    registry.bind("non_callable")(obj)
+    registry.bind("non_callable")(lambda: obj)
     assert registry.is_bound(obj) is True
 
     # Test is_bound with non-function object in _objects

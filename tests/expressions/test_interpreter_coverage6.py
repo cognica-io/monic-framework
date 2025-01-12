@@ -117,10 +117,10 @@ def test_bind_default_object_without_name():
 def test_bind_default_object_with_name_conflict():
     """Test binding an object with conflicting name to default registry."""
     reg = Registry()
-    reg._bind_default_object("test", 42)
+    reg._bind_default_object("test", lambda: 42)
 
     with pytest.raises(ValueError) as exc_info:
-        reg._bind_default_object("test", 43)
+        reg._bind_default_object("test", lambda: 43)
     assert "'test' is already bound in namespace" in str(exc_info.value)
 
 
@@ -129,7 +129,7 @@ def test_bind_default_object_with_nested_name_conflict():
     Test binding an object with conflicting nested name to default registry.
     """
     reg = Registry()
-    reg._default_objects["math"] = 42
+    reg._default_objects["math"] = lambda: 42
 
     with pytest.raises(ValueError) as exc_info:
         reg._bind_default_object("math.add", lambda x, y: x + y)
