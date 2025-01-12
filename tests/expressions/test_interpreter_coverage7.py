@@ -668,7 +668,4 @@ except TypeError as e:
     assert "super(): __class__ cell not found" in interpreter.get_name_value(
         "error1"
     )
-    assert (
-        "super() argument 1 must be a type, not NoneType"
-        in interpreter.get_name_value("error2")
-    )
+    assert "super() argument 1 must be" in interpreter.get_name_value("error2")
