@@ -42,23 +42,24 @@ class Registry:
         self._objects = {}
         self._modules = {}
 
-    if t.TYPE_CHECKING:
+    @t.overload
+    def bind(
+        self, name_or_func: str
+    ) -> (
+        t.Callable[[t.Type[T]], t.Type[T]]
+        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
+    ): ...
 
-        @t.overload
-        def bind(
-            self, name_or_func: str
-        ) -> (
-            t.Callable[[t.Type[T]], t.Type[T]]
-            | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
-        ): ...
+    @t.overload
+    def bind(self, name_or_func: t.Callable[..., T]) -> t.Callable[..., T]: ...
 
-        @t.overload
-        def bind(
-            self, name_or_func: t.Callable[..., T]
-        ) -> t.Callable[..., T]: ...
+    @t.overload
+    def bind(self, name_or_func: t.Type[T]) -> t.Type[T]: ...
 
-        @t.overload
-        def bind(self, name_or_func: t.Type[T]) -> t.Type[T]: ...
+    @t.overload
+    def bind(
+        self,
+    ) -> t.Callable[[t.Type[T]], t.Type[T]] | t.Callable[..., T]: ...
 
     def bind(
         self, name_or_func: str | t.Callable[..., T] | t.Type[T] | None = None
@@ -265,23 +266,26 @@ class Registry:
 
         return module
 
-    if t.TYPE_CHECKING:
+    @t.overload
+    def bind_default(
+        self, name_or_func: str
+    ) -> (
+        t.Callable[[t.Type[T]], t.Type[T]]
+        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
+    ): ...
 
-        @t.overload
-        def bind_default(
-            self, name_or_func: str
-        ) -> (
-            t.Callable[[t.Type[T]], t.Type[T]]
-            | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
-        ): ...
+    @t.overload
+    def bind_default(
+        self, name_or_func: t.Callable[..., T]
+    ) -> t.Callable[..., T]: ...
 
-        @t.overload
-        def bind_default(
-            self, name_or_func: t.Callable[..., T]
-        ) -> t.Callable[..., T]: ...
+    @t.overload
+    def bind_default(self, name_or_func: t.Type[T]) -> t.Type[T]: ...
 
-        @t.overload
-        def bind_default(self, name_or_func: t.Type[T]) -> t.Type[T]: ...
+    @t.overload
+    def bind_default(
+        self,
+    ) -> t.Callable[[t.Type[T]], t.Type[T]] | t.Callable[..., T]: ...
 
     def bind_default(
         self, name_or_func: str | t.Callable[..., T] | t.Type[T] | None = None
