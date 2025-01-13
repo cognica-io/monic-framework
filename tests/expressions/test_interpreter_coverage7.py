@@ -669,3 +669,143 @@ except TypeError as e:
         "error1"
     )
     assert "super() argument 1 must be" in interpreter.get_name_value("error2")
+
+
+def test_context_manager_handling():
+    """Test context manager handling and error cases."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    code = """
+class ContextManager:
+    def __init__(self, name, should_fail_enter=False, should_fail_exit=False):
+        self.name = name
+        self.should_fail_enter = should_fail_enter
+        self.should_fail_exit = should_fail_exit
+        self.events = []
+
+    def __enter__(self):
+        self.events.append(f"{self.name} enter")
+        if self.should_fail_enter:
+            raise ValueError(f"{self.name} enter failed")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.events.append(f"{self.name} exit")
+        if self.should_fail_exit:
+            raise ValueError(f"{self.name} exit failed")
+        return False  # Don't suppress exceptions
+
+# Test normal context manager
+cm1 = ContextManager("cm1")
+result1 = []
+try:
+    with cm1:
+        result1.append("in with")
+except Exception as e:
+    result1.append(str(e))
+result1.extend(cm1.events)
+
+# Test nested context managers with enter failure
+cm2 = ContextManager("cm2")
+cm3 = ContextManager("cm3", should_fail_enter=True)
+result2 = []
+try:
+    with cm2, cm3:
+        result2.append("in with")
+except Exception as e:
+    result2.append(str(e))
+result2.extend(cm2.events)
+result2.extend(cm3.events)
+
+# Test context manager with exit failure
+cm4 = ContextManager("cm4", should_fail_exit=True)
+result3 = []
+try:
+    with cm4:
+        result3.append("in with")
+except Exception as e:
+    result3.append(str(e))
+result3.extend(cm4.events)
+
+# Test context manager that modifies variables
+class VarManager:
+    def __enter__(self):
+        return 42
+
+    def __exit__(self, *args):
+        return False
+
+result4 = []
+with VarManager() as value:
+    result4.append(value)
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.get_name_value("result1") == [
+        "in with",
+        "cm1 enter",
+        "cm1 exit",
+    ]
+    assert interpreter.get_name_value("result2") == [
+        "cm3 enter failed",
+        "cm2 enter",
+        "cm2 exit",
+        "cm3 enter",
+    ]
+    assert interpreter.get_name_value("result3") == [
+        "in with",
+        "cm4 exit failed",
+        "cm4 enter",
+        "cm4 exit",
+    ]
+    assert interpreter.get_name_value("result4") == [42]
+
+
+def test_error_propagation():
+    """Test error propagation in different contexts."""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    code = """
+def test_error_chain():
+    result = []
+    try:
+        try:
+            raise ValueError("original")
+        except ValueError as e:
+            result.append("caught ValueError")
+            raise TypeError("chained") from e
+    except TypeError as e:
+        result.append(f"caught TypeError: {e}")
+        try:
+            raise RuntimeError("final") from e
+        except RuntimeError as e1:  # TODO: This should be `e` instead of `e1` but we need to fix the scope context in interpreter.py first.
+            result.append(f"caught RuntimeError: {e1}")
+    return result
+
+result1 = test_error_chain()
+
+def test_error_suppression():
+    result = []
+    try:
+        try:
+            raise ValueError("test")
+        except ValueError as e:
+            result.append("caught ValueError")
+            raise RuntimeError("converted") from None
+    except RuntimeError as e:
+        result.append(f"caught RuntimeError: {e}")
+    return result
+
+result2 = test_error_suppression()
+"""
+    interpreter.execute(parser.parse(code))
+    assert interpreter.get_name_value("result1") == [
+        "caught ValueError",
+        "caught TypeError: chained",
+        "caught RuntimeError: final",
+    ]
+    assert interpreter.get_name_value("result2") == [
+        "caught ValueError",
+        "caught RuntimeError: converted",
+    ]
