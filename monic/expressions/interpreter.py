@@ -495,6 +495,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 f"Unsupported context type: {type(node.ctx).__name__}"
             )
 
+        return None
+
     _AUG_OP_MAP: t.Dict[t.Type[ast.operator], t.Callable] = {
         ast.Add: operator.add,
         ast.Sub: operator.sub,
