@@ -910,7 +910,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         try:
             for stmt in node.body:
                 result = self.visit(stmt)
-        except Exception as e:
+        except BaseException as e:
             # Try to find a matching handler
             for handler in node.handlers:
                 if handler.type is None:
