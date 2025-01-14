@@ -505,3 +505,14 @@ except ValueError as e:
 """
             )
         )
+
+
+def test_delete_attribute_error_handling():
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    code = """
+del _
+"""
+    with pytest.raises(SyntaxError):
+        interpreter.execute(parser.parse(code))
