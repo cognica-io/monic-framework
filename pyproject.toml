@@ -42,3 +42,6 @@ include = '\.pyi?$'
 
 [tool.mypy]
 ignore_missing_imports = true
+
+[tool.setuptools.package-data]
+monic = ["py.typed"]
