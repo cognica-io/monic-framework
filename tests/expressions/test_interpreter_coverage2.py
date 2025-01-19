@@ -6,6 +6,8 @@
 
 # pylint: disable=unused-variable
 
+import sys
+
 import pytest
 
 from monic.expressions import (
@@ -992,7 +994,10 @@ error
 """
     tree = parser.parse(code)
     result = interpreter.execute(tree)
-    assert result == "integer division or modulo by zero"
+    if sys.version_info < (3, 14):
+        assert result == "integer division or modulo by zero"
+    else:
+        assert result == "division by zero"
 
     # Test power operation with invalid operands
     code = """
