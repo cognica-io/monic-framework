@@ -2030,7 +2030,10 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         return pos_args, kwargs
 
     def _call_function(
-        self, func: t.Any, pos_args: list[t.Any], kwargs: dict[str, t.Any]
+        self,
+        func: t.Callable[..., t.Any],
+        pos_args: list[t.Any],
+        kwargs: dict[str, t.Any],
     ) -> t.Any:
         """Call a function with the given arguments.
 
