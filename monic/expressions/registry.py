@@ -43,31 +43,21 @@ class Registry:
         self._modules = {}
 
     @t.overload
-    def bind(self, name_or_func: str) -> t.Callable[
-        [t.Type[T] | t.Callable[..., T]],
-        t.Type[T] | t.Callable[..., T],
-    ]: ...
+    def bind(
+        self, name_or_func: str, *, _obj: T | None = None
+    ) -> t.Callable[..., T]: ...
 
     @t.overload
     def bind(self, name_or_func: t.Callable[..., T]) -> t.Callable[..., T]: ...
 
-    @t.overload
-    def bind(self, name_or_func: t.Type[T]) -> t.Type[T]: ...
-
-    @t.overload
     def bind(
         self,
-    ) -> t.Callable[[t.Type[T]], t.Type[T]] | t.Callable[..., T]: ...
-
-    def bind(
-        self, name_or_func: str | t.Callable[..., T] | t.Type[T] | None = None
+        name_or_func: str | t.Callable[..., T] | None = None,
+        *,
+        _obj: T | None = None,  # type: ignore
     ) -> (
-        t.Callable[
-            [t.Type[T] | t.Callable[..., T]],
-            t.Type[T] | t.Callable[..., T],
-        ]
-        | t.Callable[..., T]
-        | t.Type[T]
+        t.Callable[..., T]
+        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
     ):
         """Bind an object with a given name.
 
@@ -93,9 +83,7 @@ class Registry:
             return self._bind_object(bind_name, name_or_func)
 
         # Case 2: @monic_bind() or @monic_bind("custom.name")
-        def decorator(
-            obj: t.Callable[..., T] | t.Type[T]
-        ) -> t.Callable[..., T] | t.Type[T]:
+        def decorator(obj: t.Callable[..., T]) -> t.Callable[..., T]:
             bind_name = name_or_func or getattr(obj, "__name__", None)
             if bind_name is None:
                 raise ValueError(
@@ -268,33 +256,23 @@ class Registry:
         return module
 
     @t.overload
-    def bind_default(self, name_or_func: str) -> t.Callable[
-        [t.Type[T] | t.Callable[..., T]],
-        t.Type[T] | t.Callable[..., T],
-    ]: ...
+    def bind_default(
+        self, name_or_func: str, *, _obj: T | None = None
+    ) -> t.Callable[..., T]: ...
 
     @t.overload
     def bind_default(
         self, name_or_func: t.Callable[..., T]
     ) -> t.Callable[..., T]: ...
 
-    @t.overload
-    def bind_default(self, name_or_func: t.Type[T]) -> t.Type[T]: ...
-
-    @t.overload
     def bind_default(
         self,
-    ) -> t.Callable[[t.Type[T]], t.Type[T]] | t.Callable[..., T]: ...
-
-    def bind_default(
-        self, name_or_func: str | t.Callable[..., T] | t.Type[T] | None = None
+        name_or_func: str | t.Callable[..., T] | None = None,
+        *,
+        _obj: T | None = None,  # type: ignore
     ) -> (
-        t.Callable[
-            [t.Type[T] | t.Callable[..., T]],
-            t.Type[T] | t.Callable[..., T],
-        ]
-        | t.Callable[..., T]
-        | t.Type[T]
+        t.Callable[..., T]
+        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
     ):
         """Bind an object with a given name to the default registry.
 
@@ -320,9 +298,7 @@ class Registry:
             return self._bind_default_object(bind_name, name_or_func)
 
         # Case 2: @bind_default() or @bind_default("custom.name")
-        def decorator(
-            obj: t.Callable[..., T] | t.Type[T]
-        ) -> t.Callable[..., T] | t.Type[T]:
+        def decorator(obj: t.Callable[..., T]) -> t.Callable[..., T]:
             bind_name = name_or_func or getattr(obj, "__name__", None)
             if bind_name is None:
                 raise ValueError(
