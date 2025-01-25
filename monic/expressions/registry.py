@@ -268,12 +268,10 @@ class Registry:
         return module
 
     @t.overload
-    def bind_default(
-        self, name_or_func: str
-    ) -> (
-        t.Callable[[t.Type[T]], t.Type[T]]
-        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
-    ): ...
+    def bind_default(self, name_or_func: str) -> t.Callable[
+        [t.Type[T] | t.Callable[..., T]],
+        t.Type[T] | t.Callable[..., T],
+    ]: ...
 
     @t.overload
     def bind_default(
@@ -291,8 +289,10 @@ class Registry:
     def bind_default(
         self, name_or_func: str | t.Callable[..., T] | t.Type[T] | None = None
     ) -> (
-        t.Callable[[t.Type[T]], t.Type[T]]
-        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
+        t.Callable[
+            [t.Type[T] | t.Callable[..., T]],
+            t.Type[T] | t.Callable[..., T],
+        ]
         | t.Callable[..., T]
         | t.Type[T]
     ):
