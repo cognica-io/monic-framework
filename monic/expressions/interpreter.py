@@ -2054,7 +2054,21 @@ class ExpressionsInterpreter(ast.NodeVisitor):
 
         # Handle bound functions
         if registry.is_bound(func):
-            return func(*pos_args, **kwargs)
+            if isinstance(
+                func, (types.BuiltinFunctionType, types.BuiltinMethodType)
+            ) or not hasattr(func, "__expressions_type__"):
+                return func(*pos_args, **kwargs)
+
+            # Temporarily set the function's __qualname__ to the bound
+            # function's __qualname__ so that exception messages are more
+            # informative
+            func_name = getattr(func, "__qualname__")
+            try:
+                if hasattr(func, "__expressions_name__"):
+                    setattr(func, "__qualname__", func.__expressions_name__)
+                return func(*pos_args, **kwargs)
+            finally:
+                setattr(func, "__qualname__", func_name)
 
         # Handle bound methods
         if isinstance(func, types.MethodType):

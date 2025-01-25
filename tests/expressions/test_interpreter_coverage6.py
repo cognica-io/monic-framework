@@ -378,7 +378,7 @@ def test_bind_with_name_and_function():
 
     obj = reg.bind("math.add")(add)
     assert callable(reg._objects["math"]["add"])
-    assert hasattr(obj, "__is_expressions_type__")
+    assert hasattr(obj, "__expressions_type__")
 
 
 def test_bind_default_with_name_and_function():
@@ -390,7 +390,7 @@ def test_bind_default_with_name_and_function():
 
     obj = reg.bind_default("math.add")(add)
     assert callable(reg._default_objects["math"]["add"])
-    assert hasattr(obj, "__is_expressions_type__")
+    assert hasattr(obj, "__expressions_type__")
 
 
 def test_bind_module_with_no_alias():

@@ -221,7 +221,7 @@ def test_registry_nested_name_access():
     def inner_func():
         pass  # pragma: no cover
 
-    setattr(inner_func, "__is_expressions_type__", True)
+    setattr(inner_func, "__expressions_type__", True)
     registry._objects["nested_obj"] = {"func": inner_func}
     assert registry.is_bound("nested_obj.func") is True
 

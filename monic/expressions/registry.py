@@ -123,7 +123,7 @@ class Registry:
             obj = name_or_obj
 
         if isinstance(obj, types.FunctionType):
-            return hasattr(obj, "__is_expressions_type__")
+            return hasattr(obj, "__expressions_type__")
 
         return True
 
@@ -220,9 +220,10 @@ class Registry:
         # Store the object in the registry
         current[parts[-1]] = obj
 
-        # Mark functions as bound
+        # Add metadata to function
         if isinstance(obj, types.FunctionType):
-            setattr(obj, "__is_expressions_type__", True)
+            setattr(obj, "__expressions_type__", True)
+            setattr(obj, "__expressions_name__", name)
 
         return obj
 
@@ -369,9 +370,10 @@ class Registry:
         # Store the object in the registry
         current[parts[-1]] = obj
 
-        # Mark functions as bound
+        # Add metadata to function
         if isinstance(obj, types.FunctionType):
-            setattr(obj, "__is_expressions_type__", True)
+            setattr(obj, "__expressions_type__", True)
+            setattr(obj, "__expressions_name__", name)
 
         return obj
 

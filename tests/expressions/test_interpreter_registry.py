@@ -397,14 +397,14 @@ def test_bind_callable_without_name():
 
 def test_is_bound_with_function():
     """
-    Test is_bound with a function that has __is_expressions_type__
+    Test is_bound with a function that has __expressions_type__
     attribute.
     """
 
     def test_func():
         pass  # pragma: no cover
 
-    setattr(test_func, "__is_expressions_type__", True)
+    setattr(test_func, "__expressions_type__", True)
 
     assert registry.is_bound(test_func)
 
