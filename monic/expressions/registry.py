@@ -43,12 +43,10 @@ class Registry:
         self._modules = {}
 
     @t.overload
-    def bind(
-        self, name_or_func: str
-    ) -> (
-        t.Callable[[t.Type[T]], t.Type[T]]
-        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
-    ): ...
+    def bind(self, name_or_func: str) -> t.Callable[
+        [t.Type[T] | t.Callable[..., T]],
+        t.Type[T] | t.Callable[..., T],
+    ]: ...
 
     @t.overload
     def bind(self, name_or_func: t.Callable[..., T]) -> t.Callable[..., T]: ...
@@ -64,8 +62,10 @@ class Registry:
     def bind(
         self, name_or_func: str | t.Callable[..., T] | t.Type[T] | None = None
     ) -> (
-        t.Callable[[t.Type[T]], t.Type[T]]
-        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
+        t.Callable[
+            [t.Type[T] | t.Callable[..., T]],
+            t.Type[T] | t.Callable[..., T],
+        ]
         | t.Callable[..., T]
         | t.Type[T]
     ):
