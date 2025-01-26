@@ -328,8 +328,13 @@ def test_bind_object_without_name():
     Test that binding an object without a name and no __name__ attribute
     raises ValueError.
     """
+
+    class Callable:
+        def __call__(self):
+            pass  # pragma: no cover
+
     with pytest.raises(ValueError) as exc_info:
-        registry.bind()(object())
+        registry.bind()(Callable())
 
     assert "No name provided and object has no __name__ attribute" in str(
         exc_info.value
@@ -423,7 +428,8 @@ def test_bind_with_invalid_name():
     """Test that binding with an invalid name type raises ValueError."""
 
     class TestObject:
-        pass  # pragma: no cover
+        def __call__(self):
+            pass  # pragma: no cover
 
     with pytest.raises(ValueError) as exc_info:
         registry.bind()(TestObject())  # Pass an object without __name__

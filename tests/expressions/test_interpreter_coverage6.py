@@ -107,8 +107,12 @@ def test_bind_default_object_without_name():
     """Test binding an object without name to default registry."""
     reg = Registry()
 
+    class Callable:
+        def __call__(self):
+            pass  # pragma: no cover
+
     with pytest.raises(ValueError) as exc_info:
-        reg.bind_default()(object())
+        reg.bind_default()(Callable())
     assert "No name provided and object has no __name__ attribute" in str(
         exc_info.value
     )

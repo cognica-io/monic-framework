@@ -42,7 +42,8 @@ def test_registry_basic_operations():
 
     # Test bind with no name
     class NoName:
-        pass  # pragma: no cover
+        def __call__(self):
+            pass  # pragma: no cover
 
     with pytest.raises(
         ValueError,
@@ -740,8 +741,12 @@ def test_registry_bind_errors():
     error1 = ""
     error2 = ""
 
+    class Callable:
+        def __call__(self):
+            pass  # pragma: no cover
+
     try:
-        reg.bind()(None)  # Should raise ValueError
+        reg.bind()(Callable())  # Should raise ValueError
     except ValueError as e:
         error1 = str(e)
 
