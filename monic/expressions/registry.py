@@ -25,7 +25,7 @@ class NamespaceProxy:
         return value
 
 
-T = t.TypeVar("T")
+_F = t.TypeVar("_F", bound=t.Callable[..., t.Any])
 
 
 class Registry:
@@ -43,22 +43,15 @@ class Registry:
         self._modules = {}
 
     @t.overload
-    def bind(
-        self, name_or_func: str, *, _obj: T | None = None
-    ) -> t.Callable[..., T]: ...
+    def bind(self, name_or_func: str | None = None) -> t.Callable[[_F], _F]: ...
 
     @t.overload
-    def bind(self, name_or_func: t.Callable[..., T]) -> t.Callable[..., T]: ...
+    def bind(self, name_or_func: _F) -> _F: ...
 
     def bind(
         self,
-        name_or_func: str | t.Callable[..., T] | None = None,
-        *,
-        _obj: T | None = None,  # type: ignore
-    ) -> (
-        t.Callable[..., T]
-        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
-    ):
+        name_or_func: str | t.Callable[[_F], _F] | _F | None = None,
+    ) -> t.Callable[[_F], _F] | _F:
         """Bind an object with a given name.
 
         This decorator can be used in two ways:
@@ -83,7 +76,7 @@ class Registry:
             return self._bind_object(bind_name, name_or_func)
 
         # Case 2: @monic_bind() or @monic_bind("custom.name")
-        def decorator(obj: t.Callable[..., T]) -> t.Callable[..., T]:
+        def decorator(obj: _F) -> _F:
             bind_name = name_or_func or getattr(obj, "__name__", None)
             if bind_name is None:
                 raise ValueError(
@@ -170,9 +163,7 @@ class Registry:
                 raise ValueError(f"Name '{name}' is already bound")
             namespace[name] = obj
 
-    def _bind_object(
-        self, name: str, obj: t.Callable[..., T] | t.Type[T]
-    ) -> t.Callable[..., T] | t.Type[T]:
+    def _bind_object(self, name: str, obj: _F) -> _F:
         """Bind an object with a given name.
 
         Args:
@@ -208,10 +199,9 @@ class Registry:
         # Store the object in the registry
         current[parts[-1]] = obj
 
-        # Add metadata to function
-        if isinstance(obj, types.FunctionType):
-            setattr(obj, "__expressions_type__", True)
-            setattr(obj, "__expressions_name__", name)
+        # Add metadata to the object
+        setattr(obj, "__expressions_type__", True)
+        setattr(obj, "__expressions_name__", name)
 
         return obj
 
@@ -257,23 +247,16 @@ class Registry:
 
     @t.overload
     def bind_default(
-        self, name_or_func: str, *, _obj: T | None = None
-    ) -> t.Callable[..., T]: ...
+        self, name_or_func: str | None = None
+    ) -> t.Callable[[_F], _F]: ...
 
     @t.overload
-    def bind_default(
-        self, name_or_func: t.Callable[..., T]
-    ) -> t.Callable[..., T]: ...
+    def bind_default(self, name_or_func: _F) -> _F: ...
 
     def bind_default(
         self,
-        name_or_func: str | t.Callable[..., T] | None = None,
-        *,
-        _obj: T | None = None,  # type: ignore
-    ) -> (
-        t.Callable[..., T]
-        | t.Callable[[t.Callable[..., T]], t.Callable[..., T]]
-    ):
+        name_or_func: str | t.Callable[[_F], _F] | _F | None = None,
+    ) -> t.Callable[[_F], _F] | _F:
         """Bind an object with a given name to the default registry.
 
         This decorator can be used in two ways:
@@ -298,7 +281,7 @@ class Registry:
             return self._bind_default_object(bind_name, name_or_func)
 
         # Case 2: @bind_default() or @bind_default("custom.name")
-        def decorator(obj: t.Callable[..., T]) -> t.Callable[..., T]:
+        def decorator(obj: _F) -> _F:
             bind_name = name_or_func or getattr(obj, "__name__", None)
             if bind_name is None:
                 raise ValueError(
@@ -308,9 +291,7 @@ class Registry:
 
         return decorator
 
-    def _bind_default_object(
-        self, name: str, obj: t.Callable[..., T] | t.Type[T]
-    ) -> t.Callable[..., T] | t.Type[T]:
+    def _bind_default_object(self, name: str, obj: _F) -> _F:
         """Bind an object with a given name to the default registry.
 
         Args:
@@ -346,10 +327,9 @@ class Registry:
         # Store the object in the registry
         current[parts[-1]] = obj
 
-        # Add metadata to function
-        if isinstance(obj, types.FunctionType):
-            setattr(obj, "__expressions_type__", True)
-            setattr(obj, "__expressions_name__", name)
+        # Add metadata to the object
+        setattr(obj, "__expressions_type__", True)
+        setattr(obj, "__expressions_name__", name)
 
         return obj
 
