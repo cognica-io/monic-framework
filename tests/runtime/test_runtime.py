@@ -163,3 +163,55 @@ def test_arrow_parquet_runtime():
     interpreter.execute(tree)
 
     assert isinstance(interpreter.get_name_value("result"), bool)
+
+
+@pytest.mark.skipif(
+    not _has_module("inspector"), reason="Inspector is not available"
+)
+def test_inspector_is_available():
+    code = """
+    result = inspector.is_available()
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+
+    assert isinstance(interpreter.get_name_value("result"), bool)
+
+
+@pytest.mark.skipif(
+    not _has_module("inspector"), reason="Inspector is not available"
+)
+def test_inspector_runtime():
+    code = """
+    sig = inspector.signature(json.dumps)
+"""
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+
+    sig = interpreter.get_name_value("sig")
+    assert isinstance(sig, str)
+    assert "json.dumps" in sig
+
+    code = """
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    sig = inspector.signature(add)
+"""
+    tree = parser.parse(code)
+    interpreter.execute(tree)
+
+    sig = interpreter.get_name_value("sig")
+    assert isinstance(sig, str)
+    assert "add" in sig
+
+    code = """
+    sig = inspector.signature(json)
+"""
+    with pytest.raises(ValueError):
+        tree = parser.parse(code)
+        interpreter.execute(tree)
