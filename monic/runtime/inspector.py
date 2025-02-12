@@ -28,7 +28,7 @@ def inspector_signature(
 
     sig = inspect.signature(obj)
 
-    return f"{name}{sig.format()}"
+    return f"{name}{sig}"
 
 
 @monic_bind_default("inspector.is_available")
