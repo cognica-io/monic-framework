@@ -22,6 +22,7 @@ class NamespaceProxy:
         value = self._namespace[name]
         if isinstance(value, dict):
             return NamespaceProxy(value)
+
         return value
 
 
@@ -201,6 +202,7 @@ class Registry:
 
         # Add metadata to the object
         setattr(obj, "__expressions_type__", True)
+        setattr(obj, "__expressions_builtin__", False)
         setattr(obj, "__expressions_name__", name)
 
         return obj
@@ -329,6 +331,7 @@ class Registry:
 
         # Add metadata to the object
         setattr(obj, "__expressions_type__", True)
+        setattr(obj, "__expressions_builtin__", True)
         setattr(obj, "__expressions_name__", name)
 
         return obj
