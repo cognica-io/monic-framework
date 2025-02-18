@@ -9,5 +9,8 @@ from dataclasses import dataclass
 
 @dataclass
 class ExpressionsContext:
+    # Allow return statements at top-level
+    allow_return_at_top_level: bool = False
+
     # The timeout for evaluating the expression in seconds.
     timeout: float | None = 10.0

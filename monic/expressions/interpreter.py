@@ -302,6 +302,8 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                 result = self.visit(tree)
                 self.global_env["_"] = result
                 return result
+        except ReturnValue as e:
+            return e.value
         except TimeoutError as e:
             raise e
 
@@ -1919,7 +1921,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         )
 
     def visit_Return(self, node: ast.Return) -> None:
-        if self.control.function_depth == 0:
+        if (
+            not self.context.allow_return_at_top_level
+            and self.control.function_depth == 0
+        ):
+            print("raise SyntaxError('return outside function')")
             raise SyntaxError("'return' outside function")
 
         value = None if node.value is None else self.visit(node.value)
