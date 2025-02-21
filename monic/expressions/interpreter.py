@@ -2500,7 +2500,13 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             AttributeError: If attribute doesn't exist
         """
         try:
-            return getattr(value, attr_name)
+            attr_value = getattr(value, attr_name)
+            if (
+                isinstance(attr_value, types.ModuleType)
+                and attr_value in SecurityChecker.FORBIDDEN_MODULES
+            ):
+                raise SecurityError(f"Access to '{attr_name}' is not allowed")
+            return attr_value
         except AttributeError as e:
             if isinstance(value, type):
                 raise AttributeError(

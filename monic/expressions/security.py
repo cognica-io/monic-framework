@@ -6,6 +6,26 @@
 
 import ast
 
+# Forbidden modules
+import abc
+import builtins
+import concurrent
+import concurrent.futures
+import ctypes
+import dis
+import importlib
+import inspect
+import io
+import multiprocessing
+import os
+import pathlib
+import pickle
+import shutil
+import signal
+import subprocess
+import sys
+import traceback
+
 from monic.expressions.exceptions import SecurityError
 
 
@@ -15,6 +35,28 @@ class SecurityChecker(ast.NodeVisitor):
     This class performs security checks on the AST before interpretation.
     It ensures that no dangerous operations are allowed.
     """
+
+    # List of instances of forbidden modules
+    FORBIDDEN_MODULES = {
+        abc,
+        builtins,
+        concurrent,
+        concurrent.futures,
+        ctypes,
+        dis,
+        importlib,
+        inspect,
+        io,
+        multiprocessing,
+        os,
+        pathlib,
+        pickle,
+        shutil,
+        signal,
+        subprocess,
+        sys,
+        traceback,
+    }
 
     # List of forbidden functions and modules
     FORBIDDEN_NAMES = {
