@@ -13,6 +13,16 @@ from monic.expressions import (
 )
 
 
+def _has_module(module_name: str) -> bool:
+    code = f"""
+    {module_name}.is_available()
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+    tree = parser.parse(code)
+    return interpreter.execute(tree)
+
+
 def test_security_checks():
     """Test comprehensive security checks in the interpreter.
 
@@ -132,6 +142,30 @@ def test_forbidden_module_access():
     # Test sys.modules access
     with pytest.raises(NameError):
         tree = parser.parse("sys.modules")
+        interpreter.execute(tree)
+
+
+@pytest.mark.skipif(not _has_module("pd"), reason="Pandas is not available")
+def test_forbidden_module_indirect_access():
+    """Test forbidden module access in indirect ways.
+
+    Tests:
+    1. Access to pickle via pandas
+    2. Access to io via pandas
+    """
+    parser = ExpressionsParser()
+    interpreter = ExpressionsInterpreter()
+
+    # Test pickle access via pandas
+    with pytest.raises(
+        SecurityError, match="Access to 'pickle' is not allowed"
+    ):
+        tree = parser.parse("pd.io.pickle.pickle.codecs")
+        interpreter.execute(tree)
+
+    # Test pickle access via pandas
+    with pytest.raises(SecurityError, match="Access to 'io' is not allowed"):
+        tree = parser.parse("pd.io.pickle.pc.io.abc")
         interpreter.execute(tree)
 
 
