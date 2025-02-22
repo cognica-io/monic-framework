@@ -8,22 +8,30 @@ import ast
 
 # Forbidden modules
 import abc
+import asyncio
 import builtins
 import concurrent
 import concurrent.futures
 import ctypes
 import dis
+import fcntl
 import importlib
 import inspect
 import io
+import mmap
 import multiprocessing
 import os
 import pathlib
 import pickle
+import platform
+import pty
+import resource
 import shutil
 import signal
+import socket
 import subprocess
 import sys
+import threading
 import traceback
 
 from monic.expressions.exceptions import SecurityError
@@ -39,22 +47,30 @@ class SecurityChecker(ast.NodeVisitor):
     # List of instances of forbidden modules
     FORBIDDEN_MODULES = {
         abc,
+        asyncio,
         builtins,
         concurrent,
         concurrent.futures,
         ctypes,
         dis,
+        fcntl,
         importlib,
         inspect,
         io,
+        mmap,
         multiprocessing,
         os,
         pathlib,
         pickle,
+        platform,
+        pty,
+        resource,
         shutil,
         signal,
+        socket,
         subprocess,
         sys,
+        threading,
         traceback,
     }
 
