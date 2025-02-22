@@ -14,3 +14,8 @@ class ExpressionsContext:
 
     # The timeout for evaluating the expression in seconds.
     timeout: float | None = 10.0
+
+    # Whether to enable CPU profiling.
+    enable_cpu_profiling: bool = False
+    # The CPU threshold for evaluating the expression in seconds.
+    cpu_threshold: float | None = 0.000001  # 1 microsecond

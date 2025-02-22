@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 from monic.expressions.context import ExpressionsContext
 from monic.expressions.exceptions import SecurityError
+from monic.expressions.profiler import CPUProfiler
 from monic.expressions.registry import registry
 from monic.expressions.security import SecurityChecker
 from monic.expressions.semantic import SemanticAnalyzer
@@ -168,6 +169,11 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         self.started_at: float = time.monotonic()
 
         self.context = context or ExpressionsContext()
+        self.cpu_profiler = (
+            CPUProfiler(self.context.cpu_threshold)
+            if self.context.enable_cpu_profiling
+            else None
+        )
         self.scope_stack: list[Scope] = [Scope()]  # Track scopes
         self.control: ControlFlow = ControlFlow()
 
@@ -280,6 +286,10 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Reset the timer for timeout tracking
         self.started_at = time.monotonic()
 
+        # Reset the CPU profiler
+        if self.cpu_profiler:
+            self.cpu_profiler.reset()
+
         try:
             # Handle expression statements specially to capture their value
             if isinstance(tree, ast.Expression):
@@ -322,11 +332,24 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     f"{self.context.timeout} seconds"
                 )
 
-        # Get the visitor method for this node type
-        visitor = getattr(
-            self, f"visit_{type(node).__name__}", self.generic_visit
-        )
-        return visitor(node)
+        if self.cpu_profiler:
+            self.cpu_profiler.begin_record(
+                type(node).__name__,
+                getattr(node, "lineno", 0),
+                getattr(node, "end_lineno", 0),
+                getattr(node, "col_offset", 0),
+                getattr(node, "end_col_offset", 0),
+            )
+
+        try:
+            # Get the visitor method for this node type
+            visitor = getattr(
+                self, f"visit_{type(node).__name__}", self.generic_visit
+            )
+            return visitor(node)
+        finally:
+            if self.cpu_profiler:
+                self.cpu_profiler.end_record()
 
     def generic_visit(self, node: ast.AST) -> None:
         """Called if no explicit visitor function exists for a node."""
