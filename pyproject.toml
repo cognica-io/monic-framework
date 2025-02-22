@@ -1,6 +1,6 @@
 [project]
 name = "monic-framework"
-version = "0.1.8"
+version = "0.1.9"
 description = "Monic Framework"
 authors = [{ name = "Cognica, Inc.", email = "support@cognica.io" }]
 requires-python = ">=3.10"
