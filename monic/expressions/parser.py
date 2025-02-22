@@ -16,4 +16,6 @@ class ExpressionsParser:
 
     def parse(self, expression: str) -> ast.Module:
         expression = textwrap.dedent(expression)
-        return ast.parse(expression, mode="exec", type_comments=True)
+        return ast.fix_missing_locations(
+            ast.parse(expression, mode="exec", type_comments=True)
+        )
