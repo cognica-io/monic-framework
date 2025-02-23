@@ -8,8 +8,9 @@
 
 import textwrap
 import time
+import typing as t
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 
 @dataclass
@@ -24,6 +25,9 @@ class CPUProfileRecord:
     call_count: int = 0
     snippet: str | None = None
     children: dict[str, "CPUProfileRecord"] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, t.Any]:
+        return asdict(self)
 
 
 class CPUProfiler:
@@ -97,6 +101,11 @@ class CPUProfiler:
     def get_report(
         self, *, code: str | None = None, top_n: int | None = None
     ) -> list[CPUProfileRecord]:
+        # If no records, return empty list
+        if not self._stack:
+            return []
+
+        # If code is provided, get code lines
         if code:
             code_lines = textwrap.dedent(code).splitlines()
         else:
@@ -124,19 +133,27 @@ class CPUProfiler:
             for child in record.children.values():
                 set_snippets_recursively(child)
 
+        # If code is provided, set snippets for all records
         if code:
             for record in records:
                 set_snippets_recursively(record)
 
+        # If top_n is provided, limit the number of records
         if top_n:
             records = records[:top_n]
 
         return records
 
+    def get_report_as_dict(
+        self, *, code: str | None = None, top_n: int | None = None
+    ) -> list[dict[str, t.Any]]:
+        records = self.get_report(code=code, top_n=top_n)
+
+        return [record.to_dict() for record in records]
+
     def get_report_as_string(
         self, *, code: str | None = None, top_n: int | None = None
     ) -> str:
-        report = ["CPU Profiling Report:\n"]
         records = self.get_report(code=code, top_n=top_n)
 
         def format_record(
@@ -171,6 +188,7 @@ class CPUProfiler:
 
             return lines
 
+        report = ["CPU Profiling Report:\n"]
         for record in records:
             report.extend(format_record(record))
 

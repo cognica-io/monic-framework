@@ -8,6 +8,7 @@ from monic.expressions.context import ExpressionsContext
 from monic.expressions.exceptions import SecurityError
 from monic.expressions.interpreter import ExpressionsInterpreter
 from monic.expressions.parser import ExpressionsParser
+from monic.expressions.profiler import CPUProfileRecord, CPUProfiler
 from monic.expressions.registry import (
     monic_bind,
     monic_bind_module,
@@ -19,6 +20,9 @@ __all__ = [
     "ExpressionsContext",
     "ExpressionsInterpreter",
     "ExpressionsParser",
+    # Profiler
+    "CPUProfileRecord",
+    "CPUProfiler",
     # Exceptions
     "SecurityError",
     # Registry
