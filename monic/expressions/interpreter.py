@@ -269,6 +269,14 @@ class ExpressionsInterpreter(ast.NodeVisitor):
             }
         )
 
+        # Set the visitor function based on the context so that we don't have
+        # to check the context for each node.
+        self._visit_node = (
+            self._visit_with_profiler
+            if self.context.enable_cpu_profiling
+            else self._visit_without_profiler
+        )
+
     @property
     def current_scope(self) -> Scope:
         return self.scope_stack[-1]
@@ -289,6 +297,9 @@ class ExpressionsInterpreter(ast.NodeVisitor):
         # Reset the CPU profiler
         if self.cpu_profiler:
             self.cpu_profiler.reset()
+            self._visit_node = self._visit_with_profiler
+        else:
+            self._visit_node = self._visit_without_profiler
 
         try:
             # Handle expression statements specially to capture their value
@@ -332,6 +343,16 @@ class ExpressionsInterpreter(ast.NodeVisitor):
                     f"{self.context.timeout} seconds"
                 )
 
+        return self._visit_node(node)
+
+    def _visit_without_profiler(self, node: ast.AST) -> t.Any:
+        # Get the visitor method for this node type
+        visitor = getattr(
+            self, f"visit_{type(node).__name__}", self.generic_visit
+        )
+        return visitor(node)
+
+    def _visit_with_profiler(self, node: ast.AST) -> t.Any:
         if self.cpu_profiler:
             self.cpu_profiler.begin_record(
                 type(node).__name__,
