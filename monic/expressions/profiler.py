@@ -182,7 +182,6 @@ class CPUProfiler:
             "If": -1,
             "While": -1,
             "For": -1,
-            "Subscript": -1,
         }
 
         return adjustment.get(
