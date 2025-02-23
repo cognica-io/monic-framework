@@ -18,6 +18,7 @@ Monic Framework is a powerful expression evaluation and code execution framework
 - Function definition and call support
 - Built-in type checking and validation
 - Seamless integration with existing Python projects
+- CPU profiling support
 
 ## Supported Language Features
 
@@ -74,7 +75,8 @@ Monic Framework is a powerful expression evaluation and code execution framework
   - File system operations
   - System command execution
   - Module imports
-  - Access to sensitive attributes
+  - Access to sensitive attributes directly or indirectly
+  - Access to forbidden modules directly or indirectly
   - Dangerous built-in functions
 
 ## Installation
@@ -238,6 +240,60 @@ try:
     interpreter.execute(tree)
 except TimeoutError:
     print("Code execution timed out")  # Output: Code execution timed out
+```
+
+### CPU Profiling
+
+```python
+from monic.expressions import ExpressionsParser, ExpressionsContext, ExpressionsInterpreter
+
+
+# Initialize parser
+parser = ExpressionsParser()
+# Initialize with profiling context
+context = ExpressionsContext(enable_cpu_profiling=True)
+# Initialize interpreter with context
+interpreter = ExpressionsInterpreter(context=context)
+# Verify that the CPU profiler is initialized
+assert interpreter.cpu_profiler is not None
+
+# Define the code to profile
+code = """
+def binary_search(arr: list[int], target: int) -> int:
+    if not arr:
+        return -1
+
+    left = 0
+    right = len(arr) - 1
+
+    while left <= right:
+        mid = (left + right) // 2
+
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+
+    return -1
+
+test_arr = [1, 3, 5, 7, 9, 11, 13, 15]
+
+print(f"Array: {test_arr}")
+print(f"Search for 7: {binary_search(test_arr, 7)}")  # Should return 3
+print(f"Search for 15: {binary_search(test_arr, 15)}")  # Should return 7
+print(f"Search for 10: {binary_search(test_arr, 10)}")  # Should return -1
+print(f"Search for 1: {binary_search(test_arr, 1)}")  # Should return 0
+"""
+
+# Parse code and execute it
+tree = parser.parse(code)
+interpreter.execute(tree)
+
+# Get report with code snippets
+report = interpreter.cpu_profiler.get_report_as_string(code=code)
+print(report)
 ```
 
 ## License
