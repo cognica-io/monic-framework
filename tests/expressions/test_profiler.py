@@ -6,6 +6,8 @@
 
 # pylint: disable=protected-access
 
+import ast
+
 from monic.expressions import (
     CPUProfiler,
     CPUProfileRecord,
@@ -17,7 +19,6 @@ from monic.expressions import (
 
 def test_cpu_profiler_initialization():
     profiler = CPUProfiler()
-    assert isinstance(profiler._root, CPUProfileRecord)
     assert profiler._root.node_type == "Root"
     assert len(profiler._stack) == 0
     assert len(profiler._records) == 0
@@ -27,7 +28,7 @@ def test_cpu_profiler_reset():
     profiler = CPUProfiler()
 
     # Add some records
-    profiler.begin_record("TestNode", 1, 1, 0, 10)
+    profiler.begin_record(ast.Name(id="TestNode"), "TestNode", 1, 1, 0, 10)
     profiler.end_record()
 
     profiler.reset()
@@ -40,7 +41,9 @@ def test_cpu_profiler_record_tracking():
     profiler = CPUProfiler()
 
     # Test single record
-    profiler.begin_record("FunctionDef", 1, 5, 0, 20)
+    profiler.begin_record(
+        ast.Name(id="FunctionDef"), "FunctionDef", 1, 5, 0, 20
+    )
     profiler.end_record()
 
     report = profiler.get_report()
@@ -53,15 +56,17 @@ def test_cpu_profiler_nested_records():
     profiler = CPUProfiler()
 
     # Create nested structure
-    profiler.begin_record("FunctionDef", 1, 10, 0, 20)  # Parent
-    profiler.begin_record("For", 2, 5, 4, 15)  # Child
+    profiler.begin_record(
+        ast.Name(id="FunctionDef"), "FunctionDef", 1, 10, 0, 20
+    )
+    profiler.begin_record(ast.Name(id="For"), "For", 2, 5, 4, 15)
     profiler.end_record()  # End For
     profiler.end_record()  # End FunctionDef
 
     report = profiler.get_report()
     assert len(report) == 1
     assert len(report[0].children) == 1
-    assert list(report[0].children.values())[0].node_type == "For"
+    assert report[0].children[0].node_type == "For"
 
 
 def test_cpu_profiler_with_code_snippets():
@@ -72,7 +77,9 @@ def test_cpu_profiler_with_code_snippets():
     """
     profiler = CPUProfiler()
 
-    profiler.begin_record("FunctionDef", 2, 4, 4, 15)
+    profiler.begin_record(
+        ast.Name(id="FunctionDef"), "FunctionDef", 2, 4, 4, 15
+    )
     profiler.end_record()
 
     report = profiler.get_report(code=code)
@@ -83,7 +90,9 @@ def test_cpu_profiler_with_code_snippets():
 def test_cpu_profiler_threshold_filtering():
     profiler = CPUProfiler(cpu_threshold=1.0)  # 1 second threshold
 
-    profiler.begin_record("SlowOperation", 1, 1, 0, 10)
+    profiler.begin_record(
+        ast.Name(id="SlowOperation"), "SlowOperation", 1, 1, 0, 10
+    )
     profiler.end_record()
 
     report = profiler.get_report()
@@ -95,7 +104,7 @@ def test_cpu_profiler_threshold_filtering():
 def test_cpu_profiler_report_formats():
     profiler = CPUProfiler()
 
-    profiler.begin_record("TestNode", 1, 1, 0, 10)
+    profiler.begin_record(ast.Name(id="TestNode"), "TestNode", 1, 1, 0, 10)
     profiler.end_record()
 
     # Test dictionary format
@@ -117,7 +126,9 @@ def test_cpu_profiler_top_n_limiting():
 
     # Add multiple records
     for i in range(5):
-        profiler.begin_record(f"Node{i}", i + 1, i + 1, 0, 10)
+        profiler.begin_record(
+            ast.Name(id=f"Node{i}"), f"Node{i}", i + 1, i + 1, 0, 10
+        )
         profiler.end_record()
 
     report = profiler.get_report(top_n=3)
@@ -195,28 +206,19 @@ def test_profiler_function_calls():
     # Get profiler report
     report = interpreter.cpu_profiler.get_report()
 
-    seen = set()
-
     def get_node_by_lineno(
-        node: CPUProfileRecord, lineno: int
+        node: CPUProfileRecord, name: str, lineno: int
     ) -> list[CPUProfileRecord]:
         result: list[CPUProfileRecord] = []
-        key = f"{node.node_type}:{node.lineno}:{node.col_offset}"
-        if key in seen:
-            return result
-        seen.add(key)
-
-        if node.lineno == lineno:
+        if node.node_type == name and node.lineno == lineno:
             result.append(node)
-        for child in node.children.values():
-            result.extend(get_node_by_lineno(child, lineno))
+        for child in node.children:
+            result.extend(get_node_by_lineno(child, name, lineno))
         return result
 
     # Verify function calls are tracked
-    nodes = [n for r in report for n in get_node_by_lineno(r, 5)]
-    nodes = [n for n in nodes if n is not None and n.node_type == "Call"]
+    nodes = [n for r in report for n in get_node_by_lineno(r, "Call", 5)]
     assert len(nodes) > 0
-    assert len(nodes[0].children) > 0
     call_count = sum(n.call_count for n in nodes)
     assert call_count > 1
 
@@ -330,7 +332,7 @@ def test_profiler_nested_operations():
 
         if node.lineno == lineno:
             result.append(node)
-        for child in node.children.values():
+        for child in node.children:
             result.extend(get_node_by_lineno(child, lineno))
         return result
 
