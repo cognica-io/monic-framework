@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass, field
 @dataclass
 class CPUProfileRecord:
     node_type: str
+    depth: int = 0
     lineno: int = 0
     end_lineno: int = 0
     col_offset: int = 0
@@ -61,8 +62,9 @@ class CPUProfiler:
         if location in self._records:
             record = self._records[location]
         else:
+            depth = len(self._stack)
             record = CPUProfileRecord(
-                node_type, lineno, end_lineno, col_offset, end_col_offset
+                node_type, depth, lineno, end_lineno, col_offset, end_col_offset
             )
             self._records[location] = record
 
@@ -81,7 +83,7 @@ class CPUProfiler:
         self._start_time = time.perf_counter_ns()
 
     def end_record(self) -> None:
-        if len(self._stack) <= 1:
+        if not self._stack:
             return
 
         record = self._stack.pop()
@@ -92,11 +94,12 @@ class CPUProfiler:
         record.self_time += elapsed_time
         record.call_count += 1
 
-        # Accumulate time for all parent records in the stack
+        # Accumulate time for all parents in the stack
         for parent in self._stack:
             parent.total_time += elapsed_time
 
-        self._current = self._stack[-1]
+        # Update current record to the last record in the stack
+        self._current = self._stack[-1] if self._stack else self._root
 
     def get_report(
         self, *, code: str | None = None, top_n: int | None = None
@@ -115,8 +118,11 @@ class CPUProfiler:
         filtered_records = [
             record
             for record in self._stack[0].children.values()
-            if self._cpu_threshold is None
-            or record.total_time / 1_000_000_000 >= self._cpu_threshold
+            if record.depth <= 1
+            and (
+                self._cpu_threshold is None
+                or record.total_time / 1_000_000_000 >= self._cpu_threshold
+            )
         ]
 
         # Sort records by execution time
