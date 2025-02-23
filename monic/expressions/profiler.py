@@ -37,7 +37,7 @@ class CPUProfiler:
         self._root = CPUProfileRecord("Root")
         self._current = self._root
         self._records: dict[str, CPUProfileRecord] = {}
-        self._start_time = time.perf_counter_ns()
+        self._start_time = time.process_time_ns()
         self._cpu_threshold = cpu_threshold
 
     def reset(self) -> None:
@@ -45,7 +45,7 @@ class CPUProfiler:
         self._root = CPUProfileRecord("Root")
         self._current = self._root
         self._records = {}
-        self._start_time = time.perf_counter_ns()
+        self._start_time = time.process_time_ns()
 
     def begin_record(
         self,
@@ -80,14 +80,14 @@ class CPUProfiler:
 
         self._stack.append(record)
         self._current = record
-        self._start_time = time.perf_counter_ns()
+        self._start_time = time.process_time_ns()
 
     def end_record(self) -> None:
         if not self._stack:
             return
 
         record = self._stack.pop()
-        elapsed_time = time.perf_counter_ns() - self._start_time
+        elapsed_time = time.process_time_ns() - self._start_time
 
         # Accumulate time for current record
         record.total_time += elapsed_time
