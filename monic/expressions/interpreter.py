@@ -355,6 +355,7 @@ class ExpressionsInterpreter(ast.NodeVisitor):
     def _visit_with_profiler(self, node: ast.AST) -> t.Any:
         if self.cpu_profiler:
             self.cpu_profiler.begin_record(
+                node,
                 type(node).__name__,
                 getattr(node, "lineno", 0),
                 getattr(node, "end_lineno", 0),

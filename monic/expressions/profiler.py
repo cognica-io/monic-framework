@@ -6,6 +6,7 @@
 
 # pylint: disable=too-many-instance-attributes,too-many-arguments
 
+import ast
 import textwrap
 import time
 import typing as t
@@ -21,11 +22,31 @@ class CPUProfileRecord:
     end_lineno: int = 0
     col_offset: int = 0
     end_col_offset: int = 0
-    total_time: float = 0.0
-    self_time: float = 0.0
+    total_time_ns: int = 0
+    self_time_ns: int = 0
     call_count: int = 0
     snippet: str | None = None
-    children: dict[str, "CPUProfileRecord"] = field(default_factory=dict)
+    children: list["CPUProfileRecord"] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, t.Any]:
+        return asdict(self)
+
+
+@dataclass
+class CPUProfileRecordInternal:
+    node_type: str
+    depth: int = 0
+    lineno: int = 0
+    end_lineno: int = 0
+    col_offset: int = 0
+    end_col_offset: int = 0
+    total_time_ns: int = 0
+    self_time_ns: int = 0
+    call_count: int = 0
+    snippet: str | None = None
+    children: dict[str, "CPUProfileRecordInternal"] = field(
+        default_factory=dict
+    )
 
     def to_dict(self) -> dict[str, t.Any]:
         return asdict(self)
@@ -33,22 +54,23 @@ class CPUProfileRecord:
 
 class CPUProfiler:
     def __init__(self, cpu_threshold: float | None = None) -> None:
-        self._stack: list[CPUProfileRecord] = []
-        self._root = CPUProfileRecord("Root")
+        self._stack: list[CPUProfileRecordInternal] = []
+        self._root = CPUProfileRecordInternal("Root")
         self._current = self._root
-        self._records: dict[str, CPUProfileRecord] = {}
+        self._records: dict[str, CPUProfileRecordInternal] = {}
         self._start_time = time.process_time_ns()
         self._cpu_threshold = cpu_threshold
 
     def reset(self) -> None:
         self._stack = []
-        self._root = CPUProfileRecord("Root")
+        self._root = CPUProfileRecordInternal("Root")
         self._current = self._root
         self._records = {}
         self._start_time = time.process_time_ns()
 
     def begin_record(
         self,
+        node: ast.AST,
         node_type: str,
         lineno: int,
         end_lineno: int,
@@ -56,15 +78,28 @@ class CPUProfiler:
         end_col_offset: int,
     ) -> None:
         # Create a key for the record
-        location = f"{node_type}:{lineno}:{col_offset}:{end_col_offset}"
+        location = (
+            f"{id(node)}/{node_type}:{lineno}:{col_offset}:{end_col_offset}"
+        )
+        for record in self._stack:
+            parent_location = (
+                f"{record.node_type}:{record.lineno}:{record.col_offset}"
+                f":{record.end_col_offset}"
+            )
+            location = f"{location}/{parent_location}"
 
         # Reuse existing record or create new one
         if location in self._records:
             record = self._records[location]
         else:
             depth = len(self._stack)
-            record = CPUProfileRecord(
-                node_type, depth, lineno, end_lineno, col_offset, end_col_offset
+            record = CPUProfileRecordInternal(
+                node_type,
+                depth,
+                lineno,
+                end_lineno,
+                col_offset,
+                end_col_offset,
             )
             self._records[location] = record
 
@@ -90,13 +125,13 @@ class CPUProfiler:
         elapsed_time = time.process_time_ns() - self._start_time
 
         # Accumulate time for current record
-        record.total_time += elapsed_time
-        record.self_time += elapsed_time
+        record.total_time_ns += elapsed_time
+        record.self_time_ns += elapsed_time
         record.call_count += 1
 
         # Accumulate time for all parents in the stack
         for parent in self._stack:
-            parent.total_time += elapsed_time
+            parent.total_time_ns += elapsed_time
 
         # Update current record to the last record in the stack
         self._current = self._stack[-1] if self._stack else self._root
@@ -121,34 +156,69 @@ class CPUProfiler:
             if record.depth <= 1
             and (
                 self._cpu_threshold is None
-                or record.total_time / 1_000_000_000 >= self._cpu_threshold
+                or record.total_time_ns / 1_000_000_000 >= self._cpu_threshold
             )
         ]
 
-        # Sort records by execution time
-        records = sorted(
-            filtered_records, key=lambda x: x.total_time, reverse=True
-        )
+        # Convert internal records to external records
+        def convert_record_recursively(
+            record: CPUProfileRecordInternal,
+        ) -> CPUProfileRecord:
+            return CPUProfileRecord(
+                node_type=record.node_type,
+                depth=record.depth,
+                lineno=record.lineno,
+                end_lineno=record.end_lineno,
+                col_offset=record.col_offset,
+                end_col_offset=record.end_col_offset,
+                total_time_ns=record.total_time_ns,
+                self_time_ns=record.self_time_ns,
+                call_count=record.call_count,
+                snippet=record.snippet,
+                children=[
+                    convert_record_recursively(child)
+                    for child in record.children.values()
+                ],
+            )
 
+        converted_records = [
+            convert_record_recursively(record) for record in filtered_records
+        ]
+
+        # Sort records by execution time recursively
+        def sort_records_recursively(
+            records: list[CPUProfileRecord],
+        ) -> list[CPUProfileRecord]:
+            sorted_records = sorted(
+                records, key=lambda x: x.total_time_ns, reverse=True
+            )
+            for record in sorted_records:
+                record.children = sort_records_recursively(record.children)
+
+            return sorted_records
+
+        sorted_records = sort_records_recursively(converted_records)
+
+        # If code is provided, set snippets for all records
         def set_snippets_recursively(record: CPUProfileRecord) -> None:
             if code_lines and 0 <= record.lineno - 1 < len(code_lines):
                 record.snippet = (
                     code_lines[record.lineno - 1].split("#")[0].rstrip()
                 )
 
-            for child in record.children.values():
+            for child in record.children:
                 set_snippets_recursively(child)
 
         # If code is provided, set snippets for all records
-        if code:
-            for record in records:
+        if code_lines:
+            for record in sorted_records:
                 set_snippets_recursively(record)
 
         # If top_n is provided, limit the number of records
         if top_n:
-            records = records[:top_n]
+            sorted_records = sorted_records[:top_n]
 
-        return records
+        return sorted_records
 
     def get_report_as_dict(
         self, *, code: str | None = None, top_n: int | None = None
@@ -172,8 +242,8 @@ class CPUProfiler:
             # Print basic information
             lines.append(
                 f"{indent}{record.node_type:15} {location:<8} "
-                f"total={record.total_time / 1_000_000:.6f}ms "
-                f"self={record.self_time / 1_000_000:.6f}ms "
+                f"total={record.total_time_ns / 1_000_000_000:.6f}s "
+                f"self={record.self_time_ns / 1_000_000_000:.6f}s "
                 f"({record.call_count} calls)"
             )
 
@@ -189,7 +259,7 @@ class CPUProfiler:
                 )
 
             # Print child nodes
-            for child in record.children.values():
+            for child in record.children:
                 lines.extend(format_record(child, depth + 1))
 
             return lines
