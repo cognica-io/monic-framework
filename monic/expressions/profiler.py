@@ -20,6 +20,7 @@ class CPUProfileRecord:
     col_offset: int = 0
     end_col_offset: int = 0
     total_time: float = 0.0
+    self_time: float = 0.0
     call_count: int = 0
     snippet: str | None = None
     children: dict[str, "CPUProfileRecord"] = field(default_factory=dict)
@@ -82,9 +83,14 @@ class CPUProfiler:
         record = self._stack.pop()
         elapsed_time = time.perf_counter_ns() - self._start_time
 
-        # Accumulate time
+        # Accumulate time for current record
         record.total_time += elapsed_time
+        record.self_time += elapsed_time
         record.call_count += 1
+
+        # Accumulate time for all parent records in the stack
+        for parent in self._stack:
+            parent.total_time += elapsed_time
 
         self._current = self._stack[-1]
 
@@ -143,7 +149,8 @@ class CPUProfiler:
             # Print basic information
             lines.append(
                 f"{indent}{record.node_type:15} {location:<8} "
-                f"{record.total_time / 1_000_000:.6f}ms "
+                f"total={record.total_time / 1_000_000:.6f}ms "
+                f"self={record.self_time / 1_000_000:.6f}ms "
                 f"({record.call_count} calls)"
             )
 
