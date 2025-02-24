@@ -236,26 +236,27 @@ class CPUProfiler:
             record: CPUProfileRecord, depth: int = 0
         ) -> list[str]:
             lines = []
-            indent = "  " * depth
-            location = f"{record.lineno}:{record.col_offset}"
+            indent = "│ " * (depth - 1) + ("└── " if depth > 0 else "")
+            total_time = record.total_time_ns / 1_000_000_000
+            self_time = record.self_time_ns / 1_000_000_000
 
-            # Print basic information
+            # Print basic information with tree structure
             lines.append(
-                f"{indent}{record.node_type:15} {location:<8} "
-                f"total={record.total_time_ns / 1_000_000_000:.6f}s "
-                f"self={record.self_time_ns / 1_000_000_000:.6f}s "
-                f"({record.call_count} calls)"
+                f"{indent}{record.node_type} "
+                f"[{record.lineno}:{record.col_offset}] "
+                f"(total={total_time:.6f}s, self={self_time:.6f}s, "
+                f"calls={record.call_count})"
             )
 
-            # Print code snippet
+            # Print code snippet with improved markers
             if record.snippet:
-                lines.append(f"{indent}  - {record.snippet}")
+                snippet_indent = "│ " * depth + "│ "
+                lines.append(f"{snippet_indent}▶ {record.snippet}")
+                marker_indent = " " * (record.col_offset + 2)
                 adjustment = self._get_marker_adjustment(record)
                 marker_length = len(record.snippet.strip()[0:adjustment])
                 lines.append(
-                    f"{indent}    "
-                    + (" " * (record.col_offset))
-                    + ("^" * marker_length)
+                    f"{snippet_indent}{marker_indent}{'~' * marker_length}"
                 )
 
             # Print child nodes
